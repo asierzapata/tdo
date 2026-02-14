@@ -8,7 +8,7 @@ use serde_json::to_string_pretty;
 use uuid::Uuid;
 
 use crate::{
-    models::store::Store,
+    models::store::{Store, StoredStore},
     storage::{Storage, StorageError},
 };
 
@@ -138,12 +138,14 @@ impl Storage for JsonFileStorage {
                     obj.insert("version".to_string(), serde_json::json!(CURRENT_VERSION));
                 }
 
-                let store: Store =
+                let stored_store: StoredStore =
                     serde_json::from_value(data).map_err(|e| StorageError::ParseFailed {
                         path: self.path.clone(),
                         source: e,
                     })?;
-                Ok(store)
+
+                // Convert from storage format to working format
+                Ok(Store::from_stored(stored_store))
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Store::default()),
             Err(e) => Err(StorageError::LoadFailed {
@@ -154,8 +156,11 @@ impl Storage for JsonFileStorage {
     }
 
     fn save(&self, store: &Store) -> Result<(), StorageError> {
-        let json =
-            to_string_pretty(store).map_err(|e| StorageError::SerializeFailed { source: e })?;
+        // Convert from working format to storage format
+        let stored_store = store.to_stored();
+
+        let json = to_string_pretty(&stored_store)
+            .map_err(|e| StorageError::SerializeFailed { source: e })?;
 
         let unique_temp = format!("{}.tmp.{}", self.path.display(), Uuid::new_v4());
         let temp_path = PathBuf::from(&unique_temp);
@@ -213,22 +218,27 @@ mod tests {
             name: String::from("Some Area"),
             ..Area::default()
         };
+        let area_id = area.id;
+
         let project = Project {
-            area_id: Some(area.id),
+            area_id: Some(area_id),
             name: String::from("Some Project"),
             ..Project::default()
         };
+        let project_id = project.id;
+
         let task = Task {
             title: String::from("Some Task"),
-            project_id: Some(project.id),
+            project_id: Some(project_id),
             ..Task::default()
         };
-        let store = Store {
-            version: 1,
-            areas: Vec::from([area]),
-            projects: Vec::from([project]),
-            tasks: Vec::from([task]),
-        };
+        let task_id = task.id;
+
+        let mut store = Store::default();
+        store.add_area(area);
+        store.add_project(project);
+        store.add_task(task);
+
         let json_file_storage = JsonFileStorage {
             path: PathBuf::from("/tmp/test_store.json"),
         };
@@ -237,9 +247,9 @@ mod tests {
         }
         match json_file_storage.load() {
             Ok(loaded_store) => {
-                assert_eq!(loaded_store.areas[0].id, store.areas[0].id);
-                assert_eq!(loaded_store.projects[0].id, store.projects[0].id);
-                assert_eq!(loaded_store.tasks[0].id, store.tasks[0].id);
+                assert_eq!(loaded_store.get_area(area_id).unwrap().id, area_id);
+                assert_eq!(loaded_store.get_project(project_id).unwrap().id, project_id);
+                assert_eq!(loaded_store.get_task(task_id).unwrap().id, task_id);
             }
             Err(_) => panic!("Should correctly load the saved store"),
         }
@@ -318,6 +328,13 @@ mod tests {
             let mut store = Store::default();
             store.version = i;
 
+            // Add a unique task to make each save different
+            let task = Task {
+                title: format!("Task {}", i),
+                ..Task::default()
+            };
+            store.add_task(task);
+
             storage.save(&store).unwrap();
 
             std::thread::sleep(std::time::Duration::from_millis(10));
@@ -357,6 +374,14 @@ mod tests {
 
         let mut store2 = Store::default();
         store2.version = 2;
+
+        // Add a task to make it different from first save
+        let task = Task {
+            title: String::from("Second save task"),
+            ..Task::default()
+        };
+        store2.add_task(task);
+
         storage.save(&store2).unwrap();
 
         assert!(

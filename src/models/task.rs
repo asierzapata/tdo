@@ -5,7 +5,7 @@ use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Task {
     /// UUID to identify the task
     pub id: Uuid,
@@ -15,6 +15,8 @@ pub struct Task {
     pub notes: Option<String>,
     /// The project of this task if it belongs to any
     pub project_id: Option<Uuid>,
+    /// The area of this task if it belongs to any (and no project)
+    pub area_id: Option<Uuid>,
     /// Tags of the task
     pub tags: Vec<String>,
     /// When the user wants do to this task
@@ -33,7 +35,7 @@ pub struct Task {
     pub created_at: Timestamp,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 #[serde(tag = "type")]
 pub enum When {
     #[default]
@@ -75,7 +77,7 @@ impl When {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ChecklistItem {
     pub id: Uuid,
     pub title: String,

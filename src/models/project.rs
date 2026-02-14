@@ -3,7 +3,7 @@ use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Project {
     pub id: Uuid,
     pub name: String,

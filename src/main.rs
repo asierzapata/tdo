@@ -1,6 +1,13 @@
-use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
-use crate::models::task::When;
+use clap::{Parser, Subcommand};
+use colored::*;
+
+use crate::{
+    models::task::When,
+    services::add::{AddTaskError, AddTaskParameters, add_task},
+    storage::{Storage, json::JsonFileStorage},
+};
 
 mod models;
 mod services;
@@ -15,6 +22,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// List tasks in the inbox
+    Inbox,
+
     /// Add a new task
     Add {
         /// Task title
@@ -48,6 +58,10 @@ enum Commands {
         #[arg(short, long)]
         project: Option<String>,
 
+        /// Assign to an area
+        #[arg(short, long)]
+        area: Option<String>,
+
         /// Add tags (can be used multiple times)
         #[arg(short, long, action = clap::ArgAction::Append)]
         tag: Vec<String>,
@@ -61,49 +75,200 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
 
+    // Initialize storage
+    let storage_path = dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("tdo")
+        .join("store.json");
+
+    // Create parent directory if it doesn't exist
+    if let Some(parent) = storage_path.parent() {
+        std::fs::create_dir_all(parent).unwrap_or_else(|e| {
+            eprintln!("Error: Failed to create data directory: {}", e);
+            std::process::exit(1);
+        });
+    }
+
+    let storage = JsonFileStorage::new(storage_path);
+
     match cli.command {
+        Some(Commands::Inbox) => {
+            // Load store
+            let store = match storage.load() {
+                Ok(store) => store,
+                Err(e) => {
+                    eprintln!("Error: Failed to load store: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            // Filter inbox tasks
+            let inbox_tasks: Vec<_> = store
+                .tasks
+                .values()
+                .filter(|t| matches!(t.when, When::Inbox))
+                .filter(|t| t.completed_at.is_none())
+                .filter(|t| t.deleted_at.is_none())
+                .collect();
+
+            // Display
+            if inbox_tasks.is_empty() {
+                println!("Inbox is empty");
+            } else {
+                println!("{} ({} tasks)\n", "INBOX".cyan(), inbox_tasks.len());
+                for task in inbox_tasks {
+                    println!("{} {}", "[ ]".green(), task.title.bold());
+
+                    // Build metadata line: Project/Area • tags
+                    let mut meta_parts = vec![];
+
+                    // Show Project (Area) if task has project, else show Area if task has area
+                    if let Some(project_id) = task.project_id {
+                        if let Some(project) = store.get_project(project_id) {
+                            if let Some(area_id) = project.area_id {
+                                if let Some(area) = store.get_area(area_id) {
+                                    meta_parts.push(
+                                        format!("{} ({})", project.name, area.name)
+                                            .blue()
+                                            .to_string(),
+                                    );
+                                } else {
+                                    meta_parts.push(project.name.blue().to_string());
+                                }
+                            } else {
+                                meta_parts.push(project.name.blue().to_string());
+                            }
+                        }
+                    } else if let Some(area_id) = task.area_id {
+                        if let Some(area) = store.get_area(area_id) {
+                            meta_parts.push(area.name.blue().to_string());
+                        }
+                    }
+
+                    // Add tags
+                    if !task.tags.is_empty() {
+                        meta_parts.push(task.tags.join(", "));
+                    }
+
+                    // Print metadata line if there's anything to show
+                    if !meta_parts.is_empty() {
+                        println!("    {}", meta_parts.join(&format!(" {} ", "•".dimmed())));
+                    }
+
+                    // Print separator
+                    println!("    {}", "─".repeat(30).dimmed());
+                    println!();
+                }
+            }
+        }
         Some(Commands::Add {
             title,
             today,
             evening,
             someday,
             anytime,
-            when,
+            when: when_str,
             deadline,
             project,
+            area,
             tag,
             notes,
         }) => {
-            println!("Adding task: {}", title);
+            // Load store
+            let mut store = match storage.load() {
+                Ok(store) => store,
+                Err(e) => {
+                    eprintln!("Error: Failed to load store: {}", e);
+                    std::process::exit(1);
+                }
+            };
 
-            if today {
-                println!("  → Today");
-            }
-            if evening {
-                println!("  → Evening");
-            }
-            if someday {
-                println!("  → Someday");
-            }
-            if anytime {
-                println!("  → Anytime");
-            }
-            if let Some(ref w) = when {
-                println!("  → When: {}", w);
-            }
-            let when = When::from_command_flags(today, evening, someday, anytime, when);
+            // Parse when flags
+            let when = match When::from_command_flags(today, evening, someday, anytime, when_str) {
+                Ok(w) => w,
+                Err(_) => {
+                    eprintln!("Error: Invalid schedule date format");
+                    std::process::exit(1);
+                }
+            };
 
-            if let Some(d) = deadline {
-                println!("  → Deadline: {}", d);
-            }
-            if let Some(p) = project {
-                println!("  → Project: {}", p);
-            }
-            if !tag.is_empty() {
-                println!("  → Tags: {:?}", tag);
-            }
-            if let Some(n) = notes {
-                println!("  → Notes: {}", n);
+            // Build parameters
+            let params = AddTaskParameters {
+                title: title.clone(),
+                notes,
+                when,
+                deadline,
+                project,
+                area,
+                tags: tag,
+            };
+
+            // Call service
+            match add_task(&mut store, &storage, params) {
+                Ok(task) => {
+                    println!("✓ Task added: {}", task.title);
+                    println!("  ID: {}", task.id);
+                    if let Some(project_id) = task.project_id {
+                        if let Some(project) = store.get_project(project_id) {
+                            println!("  Project: {}", project.name);
+                        }
+                    }
+                }
+                Err(AddTaskError::ProjectNotFound(name)) => {
+                    eprintln!("Error: Project '{}' not found", name);
+
+                    // Suggest existing projects if any
+                    let projects: Vec<_> = store.projects.values().collect();
+                    if !projects.is_empty() {
+                        eprintln!("\nAvailable projects:");
+                        for project in projects {
+                            eprintln!("  - {}", project.name);
+                        }
+                    } else {
+                        eprintln!("\nNo projects exist yet. Create one first or omit --project.");
+                    }
+                    std::process::exit(1);
+                }
+                Err(AddTaskError::AmbiguousProjectName(names)) => {
+                    eprintln!("Error: Project name is ambiguous. Multiple projects found:");
+                    for name in names {
+                        eprintln!("  - {}", name);
+                    }
+                    eprintln!("\nPlease be more specific.");
+                    std::process::exit(1);
+                }
+                Err(AddTaskError::AreaNotFound(name)) => {
+                    eprintln!("Error: Area '{}' not found", name);
+
+                    // Suggest existing areas if any
+                    let areas: Vec<_> = store.areas.values().collect();
+                    if !areas.is_empty() {
+                        eprintln!("\nAvailable areas:");
+                        for area in areas {
+                            eprintln!("  - {}", area.name);
+                        }
+                    } else {
+                        eprintln!("\nNo areas exist yet. Create one first or omit --area.");
+                    }
+                    std::process::exit(1);
+                }
+                Err(AddTaskError::AmbiguousAreaName(names)) => {
+                    eprintln!("Error: Area name is ambiguous. Multiple areas found:");
+                    for name in names {
+                        eprintln!("  - {}", name);
+                    }
+                    eprintln!("\nPlease be more specific.");
+                    std::process::exit(1);
+                }
+                Err(AddTaskError::InvalidDeadline(date_str, error)) => {
+                    eprintln!("Error: Invalid deadline '{}': {}", date_str, error);
+                    eprintln!("\nExpected format: YYYY-MM-DD (e.g., 2025-03-01)");
+                    std::process::exit(1);
+                }
+                Err(AddTaskError::Storage(e)) => {
+                    eprintln!("Error: Failed to save task: {}", e);
+                    std::process::exit(1);
+                }
             }
         }
         None => {
