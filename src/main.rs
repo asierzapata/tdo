@@ -1,9 +1,10 @@
 use clap::{Parser, Subcommand};
 
-use crate::models::create_when_from_command_flags;
+use crate::models::task::When;
 
 mod models;
 mod services;
+mod storage;
 
 #[derive(Parser)]
 #[command(name = "tdo", about = "A Things 3-inspired task manager")]
@@ -90,7 +91,7 @@ fn main() {
             if let Some(ref w) = when {
                 println!("  → When: {}", w);
             }
-            let when = create_when_from_command_flags(today, evening, someday, anytime, when);
+            let when = When::from_command_flags(today, evening, someday, anytime, when);
 
             if let Some(d) = deadline {
                 println!("  → Deadline: {}", d);

@@ -1,4 +1,4 @@
-use crate::models::{Task, When};
+use crate::models::task::{Task, When};
 
 pub struct AddTaskParameters {
     title: String,
@@ -15,4 +15,5 @@ pub fn add_task(parameters: AddTaskParameters) -> Task {
     // 2. mount the whole task
     // 3. persist it
     // 4. return the task
+    todo!()
 }
