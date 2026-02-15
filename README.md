@@ -1,2 +1,2 @@
 # tdo
-todo cli app
+A minimal and clean todo list for your terminal
