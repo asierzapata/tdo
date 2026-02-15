@@ -1,3 +1,5 @@
+use std::{fmt::format, str::MatchIndices};
+
 use colored::*;
 use jiff::civil::Date;
 
@@ -66,15 +68,28 @@ fn render_task_line_with_options(
     let glyph = get_status_glyph(task, is_overdue);
     let title = &task.title;
 
+    let styled_title = if task.completed_at.is_some() {
+        title.dimmed()
+    } else {
+        title.white()
+    };
+
+    let styled_glyph = if task.completed_at.is_some() {
+        glyph.dimmed()
+    } else {
+        glyph.white()
+    };
+
     let context = get_task_context(task, store);
 
-    let left_section = format!("  {}  {}  {}", id_str, glyph, title);
+    let left_section = format!(
+        " {}  {}  {}",
+        id_str.italic().dimmed(),
+        styled_glyph,
+        styled_title
+    );
 
-    let styled_left = if task.completed_at.is_some() {
-        left_section.dimmed()
-    } else {
-        left_section.bold()
-    };
+    let styled_left = left_section;
 
     // Build right-aligned section with completion date and/or context
     let right_section = if show_completion_date && task.completed_at.is_some() {
@@ -134,7 +149,12 @@ fn format_completion_date(timestamp: jiff::Timestamp) -> String {
 /// Render a view header with title and count
 pub fn render_view_header(title: &str, count: usize) {
     let task_word = if count == 1 { "task" } else { "tasks" };
-    println!("\n  {} ({} {})\n", title.cyan().bold(), count, task_word);
+    let count_str = format!("({} {})", count, task_word);
+    println!(
+        "\n  {} {}\n",
+        title.cyan().bold(),
+        count_str.dimmed().italic()
+    );
 }
 
 /// Render a section header (e.g., "Evening", "Tomorrow")

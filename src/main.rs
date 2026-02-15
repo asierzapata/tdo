@@ -316,54 +316,9 @@ fn main() {
             if inbox_tasks.is_empty() {
                 println!("Inbox is empty");
             } else {
-                println!("{} ({} tasks)\n", "INBOX".cyan(), inbox_tasks.len());
+                ui::render_view_header("Inbox", inbox_tasks.len());
                 for task in inbox_tasks {
-                    println!(
-                        "{} {} {}",
-                        "[ ]".green(),
-                        format!("#{}", task.task_number).dimmed(),
-                        task.title.bold()
-                    );
-
-                    // Build metadata line: Project/Area • tags
-                    let mut meta_parts = vec![];
-
-                    // Show Project (Area) if task has project, else show Area if task has area
-                    if let Some(project_id) = task.project_id {
-                        if let Some(project) = store.get_project(project_id) {
-                            if let Some(area_id) = project.area_id {
-                                if let Some(area) = store.get_area(area_id) {
-                                    meta_parts.push(
-                                        format!("{} ({})", project.name, area.name)
-                                            .blue()
-                                            .to_string(),
-                                    );
-                                } else {
-                                    meta_parts.push(project.name.blue().to_string());
-                                }
-                            } else {
-                                meta_parts.push(project.name.blue().to_string());
-                            }
-                        }
-                    } else if let Some(area_id) = task.area_id
-                        && let Some(area) = store.get_area(area_id)
-                    {
-                        meta_parts.push(area.name.blue().to_string());
-                    }
-
-                    // Add tags
-                    if !task.tags.is_empty() {
-                        meta_parts.push(task.tags.join(", "));
-                    }
-
-                    // Print metadata line if there's anything to show
-                    if !meta_parts.is_empty() {
-                        println!("    {}", meta_parts.join(&format!(" {} ", "•".dimmed())));
-                    }
-
-                    // Print separator
-                    println!("    {}", "─".repeat(30).dimmed());
-                    println!();
+                    ui::render_task_line(task, &store, false);
                 }
             }
         }
