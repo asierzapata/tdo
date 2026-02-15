@@ -6,12 +6,13 @@
 | -------------------------------------- | -------------------------- |
 | `tdo add "task"`                       | Add to Inbox               |
 | `tdo add "task" --today`               | Add to Today               |
-| `tdo add "task" --evening`             | Add to Today (evening tag) |
+| `tdo add "task" --today --evening`     | Add to Today (evening tag) |
 | `tdo add "task" --someday`             | Add to Someday             |
 | `tdo add "task" --anytime`             | Add to Anytime             |
 | `tdo add "task" --when friday`         | Schedule for specific date |
 | `tdo add "task" --deadline 2025-03-01` | Set hard deadline          |
 | `tdo add "task" -p project-slug`       | Add to project             |
+| `tdo add "task" -a area-name`          | Add to area                |
 | `tdo add "task" -t tag1 -t tag2`       | Add with tags              |
 | `tdo add "task" -n "some notes"`       | Add with notes             |
 
@@ -35,61 +36,66 @@
 
 ## Act on Tasks
 
-| Command                  | Description                          |
-| ------------------------ | ------------------------------------ |
-| `tdo done <id>`          | Complete task by ID                  |
-| `tdo done "fuzzy match"` | Complete by title match (first hit)  |
-| `tdo edit <id>`          | Edit in `$EDITOR`                    |
-| `tdo delete <id>`        | Move to trash                        |
-| `tdo restore <id>`       | Restore from trash                   |
+| Command                  | Description                         |
+| ------------------------ | ----------------------------------- |
+| `tdo done <id>`          | Complete task by ID                 |
+| `tdo done "fuzzy match"` | Complete by title match (first hit) |
+| `tdo edit <id>`          | Edit in `$EDITOR`                   |
+| `tdo delete <id>`        | Move to trash                       |
+| `tdo restore <id>`       | Restore from trash                  |
 
 **Note:** Fuzzy matching uses case-insensitive substring search. If multiple matches exist, the first active task is selected.
 
 ## Move / Schedule
 
-| Command                         | Description                           |
-| ------------------------------- | ------------------------------------- |
-| `tdo today <id>`                | Move task to Today (action)           |
-| `tdo someday <id>`              | Move task to Someday (action)         |
-| `tdo anytime <id>`              | Move task to Anytime (action)         |
-| `tdo inbox <id>`                | Move task back to Inbox (action)      |
-| `tdo move <id> --when friday`   | Schedule task for specific date       |
-| `tdo move <id> -p project-slug` | Assign task to project                |
+| Command                         | Description                      |
+| ------------------------------- | -------------------------------- |
+| `tdo today <id>`                | Move task to Today (action)      |
+| `tdo someday <id>`              | Move task to Someday (action)    |
+| `tdo anytime <id>`              | Move task to Anytime (action)    |
+| `tdo inbox <id>`                | Move task back to Inbox (action) |
+| `tdo move <id> --when friday`   | Schedule task for specific date  |
+| `tdo move <id> -p project-slug` | Assign task to project           |
+| `tdo move <id> -a area-name`    | Assign task to area              |
 
-**Note:** These are write operations. To *view* these lists, use commands without `<id>` (see View section).
+**Note:** These are write operations. To _view_ these lists, use commands without `<id>` (see View section).
 
 ## Projects
 
-| Command                              | Description                     |
-| ------------------------------------ | ------------------------------- |
-| `tdo project new "Name"`             | Create project                  |
-| `tdo project new "Name" --area work` | Create in area                  |
-| `tdo project done <slug>`            | Complete project                |
-| `tdo project delete <slug>`          | Delete project                  |
+| Command                              | Description      |
+| ------------------------------------ | ---------------- |
+| `tdo project new "Name"`             | Create project   |
+| `tdo project new "Name" --area work` | Create in area   |
+| `tdo project done <slug>`            | Complete project |
+| `tdo project delete <slug>`          | Delete project   |
 
 **Project Slugs:** Auto-generated from name (lowercase, spaces→hyphens, special chars removed).
 Example: "My Cool Project" → `my-cool-project`
 
 ## Flags Reference
 
-| Flag                | Short | Description                       |
-| ------------------- | ----- | --------------------------------- |
-| `--today`           |       | Schedule for today                |
-| `--evening`         |       | Tag as evening (metadata only)    |
-| `--someday`         |       | Defer to someday                  |
-| `--anytime`         |       | Available anytime                 |
-| `--when <date>`     | `-w`  | Schedule for date                 |
-| `--deadline <date>` | `-d`  | Hard due date                     |
-| `--project <slug>`  | `-p`  | Assign to project                 |
-| `--tag <name>`      | `-t`  | Add tag (repeatable)              |
-| `--notes "text"`    | `-n`  | Add notes                         |
+| Flag                | Short | Description                    |
+| ------------------- | ----- | ------------------------------ |
+| `--today`           |       | Schedule for today             |
+| `--evening`         |       | Tag as evening (metadata only) |
+| `--someday`         |       | Defer to someday               |
+| `--anytime`         |       | Available anytime              |
+| `--when <date>`     | `-w`  | Schedule for date              |
+| `--deadline <date>` | `-d`  | Hard due date                  |
+| `--project <slug>`  | `-p`  | Assign to project              |
+| `--area <name>`     | `-a`  | Assign to area                 |
+| `--tag <name>`      | `-t`  | Add tag (repeatable)           |
+| `--notes "text"`    | `-n`  | Add notes                      |
 
 ### Date Formats
+
 Both `--when` and `--deadline` accept:
+
 - **Natural language:** `today`, `tomorrow`, `friday`, `next-monday`, `next-week`
 - **ISO dates:** `2025-03-01`, `2025-12-25`
 
 Examples:
+
 ```bash
 tdo add "Review PR" --when tomorrow
 tdo add "Tax filing" --deadline 2026-04-15
@@ -99,22 +105,26 @@ tdo move 42 --when next-friday
 ## AI Agent / Scripting Reference
 
 ### Exit Codes
+
 - `0` - Success
 - `1` - Error (task not found, invalid input, etc.)
 - `2` - Validation error (conflicting flags, invalid date format)
 
 ### Output Format
+
 - **Write operations** (add, done, edit): Print task ID on success
 - **View operations** (inbox, today, etc.): Print formatted task list
 - **Errors**: Print error message to stderr
 
 ### Common Error Cases
+
 - **Task not found:** Returns exit code 1 with message "Task not found: <id>"
 - **Multiple fuzzy matches:** Uses first match (consider using ID for precision)
 - **Invalid date:** Returns exit code 2 with message "Invalid date format: <input>"
 - **Conflicting flags:** Returns exit code 2 with message listing conflicts
 
 ### Best Practices for AI Agents
+
 1. **Use IDs when available** - More precise than fuzzy matching
 2. **Prefer ISO dates** - More unambiguous than natural language
 3. **Check exit codes** - Don't assume success
