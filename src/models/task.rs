@@ -47,7 +47,9 @@ pub enum When {
     },
     Someday,
     Anytime,
-    Scheduled(Date),
+    Scheduled {
+        date: Date,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -72,15 +74,23 @@ impl When {
     ) -> Result<When, WhenInstantiationError> {
         // Collect provided scheduling flags
         let mut provided_flags = Vec::new();
-        if today { provided_flags.push("--today"); }
-        if someday { provided_flags.push("--someday"); }
-        if anytime { provided_flags.push("--anytime"); }
-        if schedule_at.is_some() { provided_flags.push("--when"); }
+        if today {
+            provided_flags.push("--today");
+        }
+        if someday {
+            provided_flags.push("--someday");
+        }
+        if anytime {
+            provided_flags.push("--anytime");
+        }
+        if schedule_at.is_some() {
+            provided_flags.push("--when");
+        }
 
         // Detect mutually exclusive flag conflicts
         if provided_flags.len() > 1 {
             return Err(WhenInstantiationError::ConflictingFlags(
-                provided_flags.into_iter().map(String::from).collect()
+                provided_flags.into_iter().map(String::from).collect(),
             ));
         }
 
@@ -99,7 +109,7 @@ impl When {
         } else if let Some(string_date) = schedule_at {
             string_date
                 .parse()
-                .map(When::Scheduled)
+                .map(|date| When::Scheduled { date })
                 .map_err(|_| WhenInstantiationError::ScheduleAtIncorrect(string_date))
         } else {
             Ok(When::Inbox)

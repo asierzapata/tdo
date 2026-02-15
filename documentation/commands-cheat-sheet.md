@@ -31,8 +31,12 @@
 | `tdo logbook`        | Completed (last 14 days)      |
 | `tdo trash`          | Soft-deleted                  |
 | `tdo all`            | Everything active             |
-| `tdo projects`       | List all projects             |
+| `tdo project list`   | List all projects             |
 | `tdo project <slug>` | Tasks in specific project     |
+| `tdo area list`      | List all areas                |
+| `tdo area <slug>`    | Projects in specific area     |
+| `tdo tag list`       | List all tags                 |
+| `tdo tag <slug>`     | Tasks with specific tag       |
 
 **Notes:**
 
@@ -88,10 +92,11 @@ Example: "My Cool Project" → `my-cool-project`
 
 ## Areas
 
-| Command                  | Description |
-| ------------------------ | ----------- |
-| `tdo area new "Name"`    | Create area |
-| `tdo area delete "Name"` | Delete area |
+| Command                  | Description    |
+| ------------------------ | -------------- |
+| `tdo area new "Name"`    | Create area    |
+| `tdo area delete "Name"` | Delete area    |
+| `tdo area list`          | List all areas |
 
 **Area names are freeform strings. No slugification applied.**
 

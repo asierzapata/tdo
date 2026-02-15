@@ -25,6 +25,7 @@ use crate::{
 mod models;
 mod services;
 mod storage;
+mod ui;
 
 #[derive(Parser)]
 #[command(
@@ -38,8 +39,29 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Show today's tasks (including overdue)
+    Today,
+
     /// List tasks in the inbox
     Inbox,
+
+    /// Show upcoming tasks (future-dated)
+    Upcoming,
+
+    /// Show anytime tasks
+    Anytime,
+
+    /// Show someday tasks
+    Someday,
+
+    /// Show completed tasks (last 14 days)
+    Logbook,
+
+    /// Show deleted items
+    Trash,
+
+    /// Show all active tasks
+    All,
 
     /// Add a new task
     Add {
@@ -143,6 +165,10 @@ enum Commands {
     /// Manage projects
     #[command(subcommand)]
     Project(ProjectCommands),
+
+    /// Manage tags
+    #[command(subcommand)]
+    Tag(TagCommands),
 }
 
 #[derive(Debug, Subcommand)]
@@ -153,6 +179,8 @@ enum AreaCommands {
     Delete { name: String },
     /// List all areas
     List,
+    /// View projects in an area
+    View { slug: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -163,6 +191,16 @@ enum ProjectCommands {
     Delete { name: String },
     /// List all projects
     List,
+    /// View tasks in a project
+    View { slug: String },
+}
+
+#[derive(Debug, Subcommand)]
+enum TagCommands {
+    /// List all tags
+    List,
+    /// View tasks with a specific tag
+    View { name: String },
 }
 
 fn main() {
@@ -193,6 +231,70 @@ fn main() {
     };
 
     match cli.command {
+        Some(Commands::Today) => {
+            let today = jiff::Zoned::now().date();
+
+            // Collect today tasks
+            let mut today_regular: Vec<_> = store
+                .get_active_tasks()
+                .filter(|t| matches!(t.when, When::Today { evening: false }))
+                .filter(|t| t.completed_at.is_none())
+                .collect();
+
+            let mut today_evening: Vec<_> = store
+                .get_active_tasks()
+                .filter(|t| matches!(t.when, When::Today { evening: true }))
+                .filter(|t| t.completed_at.is_none())
+                .collect();
+
+            // Collect overdue tasks
+            let mut overdue_tasks: Vec<_> = store
+                .get_active_tasks()
+                .filter(|t| {
+                    if let When::Scheduled { date } = t.when {
+                        date < today && t.completed_at.is_none()
+                    } else {
+                        false
+                    }
+                })
+                .collect();
+
+            // Sort by task number
+            today_regular.sort_by_key(|t| t.task_number);
+            today_evening.sort_by_key(|t| t.task_number);
+            overdue_tasks.sort_by_key(|t| t.task_number);
+
+            let total = today_regular.len() + today_evening.len() + overdue_tasks.len();
+
+            if total == 0 {
+                println!("No tasks for today");
+            } else {
+                ui::render_view_header(&format!("Today ({})", today.strftime("%b %d")), total);
+
+                // Show overdue first if any
+                if !overdue_tasks.is_empty() {
+                    ui::render_section_header("Overdue");
+                    for task in overdue_tasks {
+                        ui::render_task_line(task, &store, true);
+                    }
+                }
+
+                // Show regular today tasks
+                if !today_regular.is_empty() {
+                    for task in today_regular {
+                        ui::render_task_line(task, &store, false);
+                    }
+                }
+
+                // Show evening tasks
+                if !today_evening.is_empty() {
+                    ui::render_section_header("Evening");
+                    for task in today_evening {
+                        ui::render_task_line(task, &store, false);
+                    }
+                }
+            }
+        }
         Some(Commands::Inbox) => {
             // Filter inbox tasks
             let inbox_tasks: Vec<_> = store
@@ -253,6 +355,200 @@ fn main() {
                     // Print separator
                     println!("    {}", "─".repeat(30).dimmed());
                     println!();
+                }
+            }
+        }
+        Some(Commands::Anytime) => {
+            // Filter anytime tasks
+            let anytime_tasks: Vec<_> = store
+                .get_active_tasks()
+                .filter(|t| matches!(t.when, When::Anytime))
+                .filter(|t| t.completed_at.is_none())
+                .collect();
+
+            // Display
+            if anytime_tasks.is_empty() {
+                println!("No anytime tasks");
+            } else {
+                ui::render_view_header("Anytime", anytime_tasks.len());
+                for task in anytime_tasks {
+                    ui::render_task_line(task, &store, false);
+                }
+            }
+        }
+        Some(Commands::Someday) => {
+            // Filter someday tasks
+            let someday_tasks: Vec<_> = store
+                .get_active_tasks()
+                .filter(|t| matches!(t.when, When::Someday))
+                .filter(|t| t.completed_at.is_none())
+                .collect();
+
+            // Display
+            if someday_tasks.is_empty() {
+                println!("No someday tasks");
+            } else {
+                ui::render_view_header("Someday", someday_tasks.len());
+                for task in someday_tasks {
+                    ui::render_task_line(task, &store, false);
+                }
+            }
+        }
+        Some(Commands::All) => {
+            use std::collections::HashMap;
+
+            // Collect all active, incomplete tasks
+            let all_tasks: Vec<_> = store
+                .get_active_tasks()
+                .filter(|t| t.completed_at.is_none())
+                .collect();
+
+            if all_tasks.is_empty() {
+                println!("No active tasks");
+            } else {
+                // Group tasks by When variant
+                let mut grouped: HashMap<String, Vec<&crate::models::task::Task>> = HashMap::new();
+
+                for task in &all_tasks {
+                    let group = match &task.when {
+                        When::Inbox => "Inbox",
+                        When::Today { evening: false } => "Today",
+                        When::Today { evening: true } => "Today (Evening)",
+                        When::Someday => "Someday",
+                        When::Anytime => "Anytime",
+                        When::Scheduled { date: _ } => "Scheduled",
+                    };
+                    grouped
+                        .entry(group.to_string())
+                        .or_insert_with(Vec::new)
+                        .push(task);
+                }
+
+                // Display in a logical order
+                let order = vec![
+                    "Inbox",
+                    "Today",
+                    "Today (Evening)",
+                    "Scheduled",
+                    "Anytime",
+                    "Someday",
+                ];
+
+                for group_name in order {
+                    if let Some(tasks) = grouped.get(group_name) {
+                        ui::render_section_header(group_name);
+                        for task in tasks {
+                            let is_overdue = ui::is_overdue(task);
+                            ui::render_task_line(task, &store, is_overdue);
+                        }
+                    }
+                }
+            }
+        }
+        Some(Commands::Upcoming) => {
+            use jiff::civil::Date;
+            use std::collections::BTreeMap;
+
+            let today = jiff::Zoned::now().date();
+
+            // Collect upcoming tasks (scheduled in the future)
+            let upcoming_tasks: Vec<_> = store
+                .get_active_tasks()
+                .filter(|t| {
+                    if let When::Scheduled { date } = t.when {
+                        date > today && t.completed_at.is_none()
+                    } else {
+                        false
+                    }
+                })
+                .collect();
+
+            if upcoming_tasks.is_empty() {
+                println!("No upcoming tasks");
+            } else {
+                // Group by date
+                let mut grouped: BTreeMap<Date, Vec<&crate::models::task::Task>> = BTreeMap::new();
+
+                for task in &upcoming_tasks {
+                    if let When::Scheduled { date } = task.when {
+                        grouped.entry(date).or_insert_with(Vec::new).push(task);
+                    }
+                }
+
+                ui::render_view_header("Upcoming", upcoming_tasks.len());
+
+                // Display by date
+                for (date, mut tasks) in grouped {
+                    tasks.sort_by_key(|t| t.task_number);
+                    ui::render_section_header(&ui::format_date_header(date));
+                    for task in tasks {
+                        ui::render_task_line(task, &store, false);
+                    }
+                }
+            }
+        }
+        Some(Commands::Logbook) => {
+            // Collect completed tasks from last 14 days
+            let mut completed_tasks: Vec<_> = store
+                .tasks
+                .values()
+                .filter(|t| {
+                    if let Some(completed_at) = t.completed_at {
+                        ui::is_within_days(completed_at, 14)
+                    } else {
+                        false
+                    }
+                })
+                .collect();
+
+            if completed_tasks.is_empty() {
+                println!("No completed tasks in the last 14 days");
+            } else {
+                // Sort by completion time (most recent first)
+                completed_tasks
+                    .sort_by(|a, b| b.completed_at.unwrap().cmp(&a.completed_at.unwrap()));
+
+                ui::render_view_header("Logbook", completed_tasks.len());
+                for task in completed_tasks {
+                    ui::render_task_line(task, &store, false);
+                }
+            }
+        }
+        Some(Commands::Trash) => {
+            // Collect deleted items
+            let deleted_tasks: Vec<_> = store.get_deleted_tasks().collect();
+            let deleted_projects: Vec<_> = store.get_deleted_projects().collect();
+            let deleted_areas: Vec<_> = store.get_deleted_areas().collect();
+
+            let total = deleted_tasks.len() + deleted_projects.len() + deleted_areas.len();
+
+            if total == 0 {
+                println!("Trash is empty");
+            } else {
+                ui::render_view_header("Trash", total);
+
+                // Show deleted tasks
+                if !deleted_tasks.is_empty() {
+                    ui::render_section_header(&format!("Tasks ({})", deleted_tasks.len()));
+                    for task in deleted_tasks {
+                        ui::render_task_line(task, &store, false);
+                    }
+                }
+
+                // Show deleted projects
+                if !deleted_projects.is_empty() {
+                    ui::render_section_header(&format!("Projects ({})", deleted_projects.len()));
+                    for project in deleted_projects {
+                        println!("  {} {}", "•".dimmed(), project.name.dimmed());
+                    }
+                }
+
+                // Show deleted areas
+                if !deleted_areas.is_empty() {
+                    ui::render_section_header(&format!("Areas ({})", deleted_areas.len()));
+                    for area in deleted_areas {
+                        println!("  {} {}", "•".dimmed(), area.name.dimmed());
+                    }
                 }
             }
         }
@@ -656,9 +952,260 @@ fn main() {
                 }
             }
         }
+        Some(Commands::Project(ProjectCommands::View { slug })) => {
+            // Find project by slug (case-insensitive)
+            let project = store
+                .get_active_projects()
+                .find(|p| p.slug.to_lowercase() == slug.to_lowercase());
+
+            match project {
+                None => {
+                    eprintln!("Error: Project '{}' not found", slug);
+
+                    let projects: Vec<_> = store.get_active_projects().collect();
+                    if !projects.is_empty() {
+                        eprintln!("\nAvailable projects:");
+                        for p in projects {
+                            eprintln!("  - {} ({})", p.name, p.slug);
+                        }
+                    }
+                    std::process::exit(1);
+                }
+                Some(project) => {
+                    // Get tasks for this project
+                    let mut tasks: Vec<_> = store
+                        .get_tasks_for_project(project.id)
+                        .filter(|t| t.completed_at.is_none() && t.deleted_at.is_none())
+                        .collect();
+
+                    tasks.sort_by_key(|t| t.task_number);
+
+                    // Display header with project name and area if applicable
+                    let header = if let Some(area_id) = project.area_id {
+                        if let Some(area) = store.get_area(area_id) {
+                            format!("{} ({})", project.name, area.name)
+                        } else {
+                            project.name.clone()
+                        }
+                    } else {
+                        project.name.clone()
+                    };
+
+                    if tasks.is_empty() {
+                        println!("No tasks in project '{}'", header);
+                    } else {
+                        ui::render_view_header(&header, tasks.len());
+                        for task in tasks {
+                            let is_overdue = ui::is_overdue(task);
+                            ui::render_task_line(task, &store, is_overdue);
+                        }
+                    }
+                }
+            }
+        }
+        Some(Commands::Area(AreaCommands::View { slug })) => {
+            // Find area by slug (case-insensitive)
+            let area = store
+                .get_active_areas()
+                .find(|a| a.slug.to_lowercase() == slug.to_lowercase());
+
+            match area {
+                None => {
+                    eprintln!("Error: Area '{}' not found", slug);
+
+                    let areas: Vec<_> = store.get_active_areas().collect();
+                    if !areas.is_empty() {
+                        eprintln!("\nAvailable areas:");
+                        for a in areas {
+                            eprintln!("  - {} ({})", a.name, a.slug);
+                        }
+                    }
+                    std::process::exit(1);
+                }
+                Some(area) => {
+                    // Get projects in this area
+                    let mut projects: Vec<_> = store
+                        .get_projects_for_area(area.id)
+                        .filter(|p| p.deleted_at.is_none())
+                        .collect();
+
+                    projects.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+                    if projects.is_empty() {
+                        println!("No projects in area '{}'", area.name);
+                    } else {
+                        println!(
+                            "\n  {} ({} {})\n",
+                            area.name.cyan().bold(),
+                            projects.len(),
+                            if projects.len() == 1 {
+                                "project"
+                            } else {
+                                "projects"
+                            }
+                        );
+
+                        for project in projects {
+                            // Count active tasks in this project
+                            let task_count = store
+                                .get_tasks_for_project(project.id)
+                                .filter(|t| t.deleted_at.is_none() && t.completed_at.is_none())
+                                .count();
+
+                            println!("  {} {}", "•".green(), project.name.bold());
+                            println!(
+                                "    {} {}",
+                                task_count.to_string().dimmed(),
+                                if task_count == 1 { "task" } else { "tasks" }.dimmed()
+                            );
+                            println!();
+                        }
+                    }
+                }
+            }
+        }
+        Some(Commands::Tag(TagCommands::List)) => {
+            // Collect all unique tags from active tasks
+            use std::collections::HashMap;
+
+            let mut tag_counts: HashMap<String, usize> = HashMap::new();
+
+            for task in store
+                .get_active_tasks()
+                .filter(|t| t.completed_at.is_none())
+            {
+                for tag in &task.tags {
+                    *tag_counts.entry(tag.clone()).or_insert(0) += 1;
+                }
+            }
+
+            if tag_counts.is_empty() {
+                println!("No tags found");
+            } else {
+                let mut tags: Vec<_> = tag_counts.iter().collect();
+                tags.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+
+                println!(
+                    "{} ({} {})\n",
+                    "TAGS".cyan(),
+                    tags.len(),
+                    if tags.len() == 1 { "tag" } else { "tags" }
+                );
+
+                for (tag, count) in tags {
+                    println!(
+                        "  {} {} {}",
+                        "•".green(),
+                        tag.bold(),
+                        format!("({} {})", count, if *count == 1 { "task" } else { "tasks" })
+                            .dimmed()
+                    );
+                }
+            }
+        }
+        Some(Commands::Tag(TagCommands::View { name })) => {
+            // Find tasks with this tag (case-insensitive)
+            let mut tasks: Vec<_> = store
+                .get_active_tasks()
+                .filter(|t| {
+                    t.completed_at.is_none()
+                        && t.tags
+                            .iter()
+                            .any(|tag| tag.to_lowercase() == name.to_lowercase())
+                })
+                .collect();
+
+            if tasks.is_empty() {
+                println!("No tasks with tag '{}'", name);
+
+                // Suggest available tags
+                use std::collections::HashSet;
+                let available_tags: HashSet<_> = store
+                    .get_active_tasks()
+                    .filter(|t| t.completed_at.is_none())
+                    .flat_map(|t| &t.tags)
+                    .collect();
+
+                if !available_tags.is_empty() {
+                    println!("\nAvailable tags:");
+                    for tag in available_tags {
+                        println!("  - {}", tag);
+                    }
+                }
+            } else {
+                tasks.sort_by_key(|t| t.task_number);
+                ui::render_view_header(&format!("#{}", name), tasks.len());
+                for task in tasks {
+                    let is_overdue = ui::is_overdue(task);
+                    ui::render_task_line(task, &store, is_overdue);
+                }
+            }
+        }
         None => {
-            // Default: show today view
-            println!("Showing today's tasks...");
+            // Default: show today view (same as `tdo today`)
+            use jiff::civil::Date;
+            let today = jiff::Zoned::now().date();
+
+            // Collect today tasks
+            let mut today_regular: Vec<_> = store
+                .get_active_tasks()
+                .filter(|t| matches!(t.when, When::Today { evening: false }))
+                .filter(|t| t.completed_at.is_none())
+                .collect();
+
+            let mut today_evening: Vec<_> = store
+                .get_active_tasks()
+                .filter(|t| matches!(t.when, When::Today { evening: true }))
+                .filter(|t| t.completed_at.is_none())
+                .collect();
+
+            // Collect overdue tasks
+            let mut overdue_tasks: Vec<_> = store
+                .get_active_tasks()
+                .filter(|t| {
+                    if let When::Scheduled { date } = t.when {
+                        date < today && t.completed_at.is_none()
+                    } else {
+                        false
+                    }
+                })
+                .collect();
+
+            // Sort by task number
+            today_regular.sort_by_key(|t| t.task_number);
+            today_evening.sort_by_key(|t| t.task_number);
+            overdue_tasks.sort_by_key(|t| t.task_number);
+
+            let total = today_regular.len() + today_evening.len() + overdue_tasks.len();
+
+            if total == 0 {
+                println!("No tasks for today");
+            } else {
+                ui::render_view_header(&format!("Today ({})", today.strftime("%b %d")), total);
+
+                // Show overdue first if any
+                if !overdue_tasks.is_empty() {
+                    ui::render_section_header("Overdue");
+                    for task in overdue_tasks {
+                        ui::render_task_line(task, &store, true);
+                    }
+                }
+
+                // Show regular today tasks
+                if !today_regular.is_empty() {
+                    for task in today_regular {
+                        ui::render_task_line(task, &store, false);
+                    }
+                }
+
+                // Show evening tasks
+                if !today_evening.is_empty() {
+                    ui::render_section_header("Evening");
+                    for task in today_evening {
+                        ui::render_task_line(task, &store, false);
+                    }
+                }
+            }
         }
     }
 }
