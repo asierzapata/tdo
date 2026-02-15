@@ -6,7 +6,10 @@ use colored::*;
 use crate::{
     models::task::{When, WhenInstantiationError},
     services::{
-        areas::{CreateAreaError, CreateAreaParameters, create_area},
+        areas::{
+            CreateAreaError, CreateAreaParameters, DeleteAreaError, DeleteAreaParameters,
+            create_area, delete_area,
+        },
         tasks::{
             AddTaskError, AddTaskParameters, CompleteTaskError, CompleteTaskParameters, add_task,
             complete_task,
@@ -355,7 +358,38 @@ fn main() {
             }
         }
         Some(Commands::Area(AreaCommands::Delete { name })) => {
-            todo!()
+            let params = DeleteAreaParameters { name };
+
+            match delete_area(&mut store, &storage, params) {
+                Ok(result) => {
+                    println!("✓ Area deleted: {}", result.area.name);
+                    if result.cascaded_projects_count > 0 {
+                        println!(
+                            "  └─ {} project(s) also deleted",
+                            result.cascaded_projects_count
+                        );
+                    }
+                    if result.cascaded_tasks_count > 0 {
+                        println!("  └─ {} task(s) also deleted", result.cascaded_tasks_count);
+                    }
+                }
+                Err(DeleteAreaError::AreaNotFound(name)) => {
+                    eprintln!("Error: Area '{}' not found", name);
+
+                    let areas: Vec<_> = store.get_active_areas().collect();
+                    if !areas.is_empty() {
+                        eprintln!("\nAvailable areas:");
+                        for area in areas {
+                            eprintln!("  - {}", area.name);
+                        }
+                    }
+                    std::process::exit(1);
+                }
+                Err(DeleteAreaError::Storage(e)) => {
+                    eprintln!("Error: Failed to delete area: {}", e);
+                    std::process::exit(1);
+                }
+            }
         }
         None => {
             // Default: show today view
