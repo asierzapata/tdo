@@ -14,7 +14,10 @@ mod services;
 mod storage;
 
 #[derive(Parser)]
-#[command(name = "tdo", about = "A Things 3-inspired task manager")]
+#[command(
+    name = "tdo",
+    about = "A minimal and clean task manager for your terminal"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -117,7 +120,12 @@ fn main() {
             } else {
                 println!("{} ({} tasks)\n", "INBOX".cyan(), inbox_tasks.len());
                 for task in inbox_tasks {
-                    println!("{} {}", "[ ]".green(), task.title.bold());
+                    println!(
+                        "{} {} {}",
+                        "[ ]".green(),
+                        format!("#{}", task.task_number).dimmed(),
+                        task.title.bold()
+                    );
 
                     // Build metadata line: Project/Area • tags
                     let mut meta_parts = vec![];
@@ -207,7 +215,7 @@ fn main() {
             match add_task(&mut store, &storage, params) {
                 Ok(task) => {
                     println!("✓ Task added: {}", task.title);
-                    println!("  ID: {}", task.id);
+                    println!("  #{}", task.task_number);
                     if let Some(project_id) = task.project_id {
                         if let Some(project) = store.get_project(project_id) {
                             println!("  Project: {}", project.name);

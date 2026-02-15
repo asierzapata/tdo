@@ -7,9 +7,43 @@ use crate::storage::StorageError;
 type MigrationFn = fn(Value) -> Result<Value, StorageError>;
 
 fn get_migrations() -> Vec<MigrationFn> {
-    vec![
-        // Future migrations will be added here
-    ]
+    vec![migrate_v1_to_v2]
+}
+
+fn migrate_v1_to_v2(mut value: Value) -> Result<Value, StorageError> {
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("version".to_string(), Value::from(2));
+
+        if let Some(tasks) = obj.get_mut("tasks").and_then(|t| t.as_array_mut()) {
+            // Build indices sorted by created_at for stable numbering
+            let mut indices: Vec<usize> = (0..tasks.len()).collect();
+            indices.sort_by(|&a, &b| {
+                let ts_a = tasks[a]
+                    .get("created_at")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let ts_b = tasks[b]
+                    .get("created_at")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                ts_a.cmp(ts_b)
+            });
+
+            // Assign task_number in created_at order, starting at 1
+            for (number, &idx) in indices.iter().enumerate() {
+                if let Some(task_obj) = tasks[idx].as_object_mut() {
+                    task_obj.insert("task_number".to_string(), Value::from((number + 1) as u64));
+                }
+            }
+
+            let next = (tasks.len() as u64) + 1;
+            obj.insert("next_task_number".to_string(), Value::from(next));
+        } else {
+            obj.insert("next_task_number".to_string(), Value::from(1u64));
+        }
+    }
+
+    Ok(value)
 }
 
 /// Returns 1 if version field is missing (assumes v1, our first versioned schema)
@@ -61,40 +95,6 @@ pub fn apply_migrations(
 
     Ok(data)
 }
-
-// ============================================================================
-// EXAMPLE: How to write a migration when you need to create v2
-// ============================================================================
-//
-// Step 1: Update CURRENT_VERSION in src/models/store.rs to 2
-// Step 2: Add migrate_v1_to_v2 to get_migrations() vec above
-// Step 3: Implement the migration function below
-//
-// #[allow(dead_code)]
-// fn migrate_v1_to_v2(mut value: Value) -> Result<Value, StorageError> {
-//     if let Some(obj) = value.as_object_mut() {
-//         // Update version number
-//         obj.insert("version".to_string(), Value::from(2));
-//
-//         // Apply your migration logic here
-//         // Example: Add a new "priority" field to all tasks with default value 0
-//         if let Some(tasks) = obj.get_mut("tasks").and_then(|t| t.as_array_mut()) {
-//             for task in tasks {
-//                 if let Some(task_obj) = task.as_object_mut() {
-//                     task_obj.insert("priority".to_string(), Value::from(0));
-//                 }
-//             }
-//         }
-//     }
-//
-//     Ok(value)
-// }
-//
-// Common migration patterns:
-// - Adding field: obj.insert("new_field".to_string(), Value::from(default));
-// - Renaming field: if let Some(v) = obj.remove("old") { obj.insert("new".to_string(), v); }
-// - Type change: Match on old type, convert, insert new value
-// ============================================================================
 
 #[cfg(test)]
 mod tests {

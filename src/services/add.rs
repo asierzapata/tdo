@@ -97,9 +97,10 @@ pub fn add_task(
         None
     };
 
-    // 4. Create the task
+    // 4. Create the task (task_number will be assigned by store.add_task)
     let task = Task {
         id: Uuid::new_v4(),
+        task_number: 0,
         title: parameters.title,
         notes: parameters.notes,
         project_id,
@@ -114,12 +115,14 @@ pub fn add_task(
         created_at: jiff::Timestamp::now(),
     };
 
-    // 5. Add to store
-    store.add_task(task.clone());
+    let task_id = task.id;
+
+    // 5. Add to store (assigns task_number)
+    store.add_task(task);
 
     // 6. Persist to storage
     storage.save(store)?;
 
-    // 7. Return the created task
-    Ok(task)
+    // 7. Return the created task (with the assigned task_number)
+    Ok(store.get_task(task_id).unwrap().clone())
 }

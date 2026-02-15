@@ -250,6 +250,8 @@ mod tests {
                 assert_eq!(loaded_store.get_area(area_id).unwrap().id, area_id);
                 assert_eq!(loaded_store.get_project(project_id).unwrap().id, project_id);
                 assert_eq!(loaded_store.get_task(task_id).unwrap().id, task_id);
+                assert_eq!(loaded_store.get_task(task_id).unwrap().task_number, 1);
+                assert_eq!(loaded_store.next_task_number, 2);
             }
             Err(_) => panic!("Should correctly load the saved store"),
         }
@@ -287,6 +289,7 @@ mod tests {
         match result {
             Ok(store) => {
                 assert_eq!(store.version, crate::models::store::CURRENT_VERSION);
+                assert_eq!(store.next_task_number, 1);
             }
             Err(e) => panic!("Expected successful load, got error: {:?}", e),
         }
@@ -391,5 +394,76 @@ mod tests {
         assert!(backups_dir.is_dir(), "Backups path should be a directory");
 
         fs::remove_dir_all(&test_dir).unwrap();
+    }
+
+    #[test]
+    fn test_v1_to_v2_migration_backfills_task_numbers() {
+        let path = PathBuf::from("/tmp/v1_migration_test.json");
+        let v1_json = r#"{
+            "tasks": [
+                {
+                    "id": "00000000-0000-0000-0000-000000000001",
+                    "title": "Second task",
+                    "notes": null, "project_id": null, "area_id": null,
+                    "tags": [], "when": {"type": "Inbox"},
+                    "deadline": null, "defer_until": null,
+                    "checklist": [], "completed_at": null, "deleted_at": null,
+                    "created_at": "2025-06-02T00:00:00Z"
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000002",
+                    "title": "First task",
+                    "notes": null, "project_id": null, "area_id": null,
+                    "tags": [], "when": {"type": "Inbox"},
+                    "deadline": null, "defer_until": null,
+                    "checklist": [], "completed_at": null, "deleted_at": null,
+                    "created_at": "2025-06-01T00:00:00Z"
+                }
+            ],
+            "projects": [],
+            "areas": []
+        }"#;
+
+        std::fs::write(&path, v1_json).unwrap();
+        let storage = JsonFileStorage::new(path);
+        let store = storage.load().expect("Migration should succeed");
+
+        assert_eq!(store.version, 2);
+        assert_eq!(store.next_task_number, 3);
+
+        // "First task" (earlier created_at) gets task_number 1
+        let first = store.get_task_by_number(1).expect("Task #1 should exist");
+        assert_eq!(first.title, "First task");
+
+        // "Second task" (later created_at) gets task_number 2
+        let second = store.get_task_by_number(2).expect("Task #2 should exist");
+        assert_eq!(second.title, "Second task");
+    }
+
+    #[test]
+    fn test_task_number_auto_increments() {
+        let mut store = Store::default();
+        assert_eq!(store.next_task_number, 1);
+
+        store.add_task(Task {
+            title: "First".into(),
+            ..Task::default()
+        });
+        assert_eq!(store.next_task_number, 2);
+        assert_eq!(store.get_task_by_number(1).unwrap().title, "First");
+
+        store.add_task(Task {
+            title: "Second".into(),
+            ..Task::default()
+        });
+        assert_eq!(store.next_task_number, 3);
+        assert_eq!(store.get_task_by_number(2).unwrap().title, "Second");
+    }
+
+    #[test]
+    fn test_get_task_by_number_not_found() {
+        let store = Store::default();
+        assert!(store.get_task_by_number(1).is_none());
+        assert!(store.get_task_by_number(999).is_none());
     }
 }

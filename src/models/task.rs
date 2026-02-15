@@ -9,6 +9,8 @@ use uuid::Uuid;
 pub struct Task {
     /// UUID to identify the task
     pub id: Uuid,
+    /// User-facing auto-incremental task number
+    pub task_number: u64,
     /// Title of the task
     pub title: String,
     /// Notes of the task
