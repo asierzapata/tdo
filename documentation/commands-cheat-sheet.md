@@ -34,6 +34,11 @@
 | `tdo projects`       | List all projects             |
 | `tdo project <slug>` | Tasks in specific project     |
 
+**Notes:**
+
+- These are read-only view commands. To modify task scheduling, use `tdo move <id>` (see Move / Schedule section)
+- Fuzzy matching applies to `done` command with title matching (case-insensitive substring search)
+
 ## Act on Tasks
 
 | Command                  | Description                         |
@@ -48,17 +53,26 @@
 
 ## Move / Schedule
 
-| Command                         | Description                      |
-| ------------------------------- | -------------------------------- |
-| `tdo today <id>`                | Move task to Today (action)      |
-| `tdo someday <id>`              | Move task to Someday (action)    |
-| `tdo anytime <id>`              | Move task to Anytime (action)    |
-| `tdo inbox <id>`                | Move task back to Inbox (action) |
-| `tdo move <id> --when friday`   | Schedule task for specific date  |
-| `tdo move <id> -p project-slug` | Assign task to project           |
-| `tdo move <id> -a area-name`    | Assign task to area              |
+The `move` command updates task properties. It supports all the same flags as `add` (see Flags Reference).
 
-**Note:** These are write operations. To _view_ these lists, use commands without `<id>` (see View section).
+| Command                               | Description                     |
+| ------------------------------------- | ------------------------------- |
+| `tdo move <id> --today`               | Move task to Today              |
+| `tdo move <id> --today --evening`     | Move task to Today (evening)    |
+| `tdo move <id> --someday`             | Move task to Someday            |
+| `tdo move <id> --anytime`             | Move task to Anytime            |
+| `tdo move <id> --when friday`         | Schedule task for specific date |
+| `tdo move <id> -p project-slug`       | Assign task to project          |
+| `tdo move <id> -a area-name`          | Assign task to area             |
+| `tdo move <id> -t new-tag`            | Add tag to task                 |
+| `tdo move <id> -n "updated notes"`    | Update task notes               |
+| `tdo move <id> --deadline 2025-03-01` | Set/update hard deadline        |
+
+**Notes:**
+
+- Flags can be combined. Example: `tdo move 5 --today -p work -t urgent`
+- Only one scheduling flag allowed: `--today`, `--someday`, `--anytime`, or `--when` (mutually exclusive)
+- To _view_ lists (Today, Someday, etc.), use commands without `<id>` (see View section)
 
 ## Projects
 
@@ -71,6 +85,15 @@
 
 **Project Slugs:** Auto-generated from name (lowercase, spaces→hyphens, special chars removed).
 Example: "My Cool Project" → `my-cool-project`
+
+## Areas
+
+| Command                  | Description |
+| ------------------------ | ----------- |
+| `tdo area new "Name"`    | Create area |
+| `tdo area delete "Name"` | Delete area |
+
+**Area names are freeform strings. No slugification applied.**
 
 ## Flags Reference
 
@@ -130,3 +153,4 @@ tdo move 42 --when next-friday
 3. **Check exit codes** - Don't assume success
 4. **Use explicit flags** - `--when friday` clearer than relying on defaults
 5. **One action per command** - Avoid chaining multiple state changes
+6. **Use move for task updates** - `tdo move <id> --when tomorrow` is more explicit and flexible than hypothetical separate scheduling commands
