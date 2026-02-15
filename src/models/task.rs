@@ -50,8 +50,16 @@ pub enum When {
     Scheduled(Date),
 }
 
+#[derive(Debug, thiserror::Error)]
 pub enum WhenInstantiationError {
-    ScheduleAtIncorrect,
+    #[error("Invalid schedule date format: {0}")]
+    ScheduleAtIncorrect(String),
+
+    #[error("Conflicting scheduling flags: {}", .0.join(", "))]
+    ConflictingFlags(Vec<String>),
+
+    #[error("The --evening flag can only be used with --today")]
+    EveningWithoutToday,
 }
 
 impl When {
@@ -62,6 +70,26 @@ impl When {
         anytime: bool,
         schedule_at: Option<String>,
     ) -> Result<When, WhenInstantiationError> {
+        // Collect provided scheduling flags
+        let mut provided_flags = Vec::new();
+        if today { provided_flags.push("--today"); }
+        if someday { provided_flags.push("--someday"); }
+        if anytime { provided_flags.push("--anytime"); }
+        if schedule_at.is_some() { provided_flags.push("--when"); }
+
+        // Detect mutually exclusive flag conflicts
+        if provided_flags.len() > 1 {
+            return Err(WhenInstantiationError::ConflictingFlags(
+                provided_flags.into_iter().map(String::from).collect()
+            ));
+        }
+
+        // Validate --evening usage
+        if evening && !today {
+            return Err(WhenInstantiationError::EveningWithoutToday);
+        }
+
+        // Process the valid flag (existing logic)
         if today {
             Ok(When::Today { evening })
         } else if someday {
@@ -72,7 +100,7 @@ impl When {
             string_date
                 .parse()
                 .map(When::Scheduled)
-                .map_err(|_| WhenInstantiationError::ScheduleAtIncorrect)
+                .map_err(|_| WhenInstantiationError::ScheduleAtIncorrect(string_date))
         } else {
             Ok(When::Inbox)
         }

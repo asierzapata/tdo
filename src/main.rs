@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 use colored::*;
 
 use crate::{
-    models::task::When,
+    models::task::{When, WhenInstantiationError},
     services::add::{AddTaskError, AddTaskParameters, add_task},
     storage::{Storage, json::JsonFileStorage},
 };
@@ -194,8 +194,24 @@ fn main() {
             // Parse when flags
             let when = match When::from_command_flags(today, evening, someday, anytime, when_str) {
                 Ok(w) => w,
-                Err(_) => {
-                    eprintln!("Error: Invalid schedule date format");
+                Err(WhenInstantiationError::ScheduleAtIncorrect(date_str)) => {
+                    eprintln!("Error: Invalid schedule date format: '{}'", date_str);
+                    eprintln!("\nExpected format: YYYY-MM-DD (e.g., 2025-03-01) or relative dates like 'friday', 'next monday'");
+                    std::process::exit(1);
+                }
+                Err(WhenInstantiationError::ConflictingFlags(flags)) => {
+                    eprintln!("Error: Cannot use multiple scheduling flags together");
+                    eprintln!("\nConflicting flags provided: {}", flags.join(", "));
+                    eprintln!("\nPlease use only one of:");
+                    eprintln!("  --today       Schedule for today");
+                    eprintln!("  --someday     Defer to someday");
+                    eprintln!("  --anytime     Available anytime");
+                    eprintln!("  --when DATE   Schedule for a specific date");
+                    std::process::exit(1);
+                }
+                Err(WhenInstantiationError::EveningWithoutToday) => {
+                    eprintln!("Error: The --evening flag can only be used with --today");
+                    eprintln!("\nExample: tdo add 'Review PRs' --today --evening");
                     std::process::exit(1);
                 }
             };
