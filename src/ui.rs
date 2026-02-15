@@ -45,6 +45,21 @@ pub fn get_task_context(task: &Task, store: &Store) -> Option<String> {
 
 /// Render a single task line with ID, glyph, title, and right-aligned context
 pub fn render_task_line(task: &Task, store: &Store, is_overdue: bool) {
+    render_task_line_with_options(task, store, is_overdue, false);
+}
+
+/// Render a task line with optional completion date display
+pub fn render_task_line_with_completion_date(task: &Task, store: &Store, is_overdue: bool) {
+    render_task_line_with_options(task, store, is_overdue, true);
+}
+
+/// Internal function to render a task line with various options
+fn render_task_line_with_options(
+    task: &Task,
+    store: &Store,
+    is_overdue: bool,
+    show_completion_date: bool,
+) {
     let terminal_width = get_terminal_width();
 
     let id_str = format!("{:>3}", task.task_number);
@@ -56,28 +71,63 @@ pub fn render_task_line(task: &Task, store: &Store, is_overdue: bool) {
     let left_section = format!("  {}  {}  {}", id_str, glyph, title);
 
     let styled_left = if task.completed_at.is_some() {
-        left_section.dimmed().strikethrough()
+        left_section.dimmed()
     } else {
         left_section.bold()
     };
 
-    if let Some(ctx) = context {
-        let ctx_dimmed = ctx.dimmed();
+    // Build right-aligned section with completion date and/or context
+    let right_section = if show_completion_date && task.completed_at.is_some() {
+        let completion_date = format_completion_date(task.completed_at.unwrap());
+        if let Some(ctx) = context {
+            format!("{}  ·  {}", completion_date, ctx)
+        } else {
+            completion_date
+        }
+    } else if let Some(ctx) = context {
+        ctx
+    } else {
+        String::new()
+    };
+
+    if !right_section.is_empty() {
+        let right_dimmed = right_section.dimmed();
 
         let left_visible_len = format!("  {}  {}  {}", id_str, " ", title).len();
-        let ctx_visible_len = ctx.len();
+        let right_visible_len = if show_completion_date && task.completed_at.is_some() {
+            // Account for the visible length without ANSI codes
+            right_section.chars().count()
+        } else {
+            right_section.len()
+        };
 
-        let total_content = left_visible_len + ctx_visible_len;
+        let total_content = left_visible_len + right_visible_len;
 
         if total_content + 4 < terminal_width {
             let padding = terminal_width - total_content - 2;
-            println!("{}{}{}", styled_left, " ".repeat(padding), ctx_dimmed);
+            println!("{}{}{}", styled_left, " ".repeat(padding), right_dimmed);
         } else {
             // Not enough space for right alignment, just print normally
             println!("{}", styled_left);
         }
     } else {
         println!("{}", styled_left);
+    }
+}
+
+/// Format a completion date for display (e.g., "Feb 15", "Today", "Yesterday")
+fn format_completion_date(timestamp: jiff::Timestamp) -> String {
+    let zoned = jiff::Zoned::new(timestamp, jiff::tz::TimeZone::system());
+    let date = zoned.date();
+    let today = jiff::Zoned::now().date();
+
+    if date == today {
+        "Today".to_string()
+    } else if date == today.yesterday().expect("yesterday should be valid") {
+        "Yesterday".to_string()
+    } else {
+        // Format as "Feb 15"
+        date.strftime("%b %d").to_string()
     }
 }
 
@@ -135,4 +185,17 @@ pub fn format_date_header(date: Date) -> String {
         // Format as "Monday, Feb 17"
         date.strftime("%A, %b %d").to_string()
     }
+}
+
+/// Extract year and month from a timestamp for grouping purposes
+pub fn get_year_month(timestamp: jiff::Timestamp) -> (i16, i8) {
+    let zoned = jiff::Zoned::new(timestamp, jiff::tz::TimeZone::system());
+    let date = zoned.date();
+    (date.year(), date.month())
+}
+
+/// Format a timestamp as a month header (e.g., "February 2026")
+pub fn format_month_header(timestamp: jiff::Timestamp) -> String {
+    let zoned = jiff::Zoned::new(timestamp, jiff::tz::TimeZone::system());
+    zoned.strftime("%B %Y").to_string()
 }

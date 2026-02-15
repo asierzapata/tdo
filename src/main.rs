@@ -485,8 +485,10 @@ fn main() {
             }
         }
         Some(Commands::Logbook) => {
+            use std::collections::BTreeMap;
+
             // Collect completed tasks from last 14 days
-            let mut completed_tasks: Vec<_> = store
+            let completed_tasks: Vec<_> = store
                 .tasks
                 .values()
                 .filter(|t| {
@@ -501,13 +503,37 @@ fn main() {
             if completed_tasks.is_empty() {
                 println!("No completed tasks in the last 14 days");
             } else {
-                // Sort by completion time (most recent first)
-                completed_tasks
-                    .sort_by(|a, b| b.completed_at.unwrap().cmp(&a.completed_at.unwrap()));
+                // Group by month
+                let mut grouped: BTreeMap<(i16, i8), Vec<&crate::models::task::Task>> =
+                    BTreeMap::new();
+
+                for task in &completed_tasks {
+                    if let Some(completed_at) = task.completed_at {
+                        let year_month = ui::get_year_month(completed_at);
+                        grouped
+                            .entry(year_month)
+                            .or_insert_with(Vec::new)
+                            .push(task);
+                    }
+                }
 
                 ui::render_view_header("Logbook", completed_tasks.len());
-                for task in completed_tasks {
-                    ui::render_task_line(task, &store, false);
+
+                // Display by month (most recent first)
+                for (_year_month, tasks) in grouped.iter().rev() {
+                    // Sort tasks within month by completion time (most recent first)
+                    let mut sorted_tasks = tasks.clone();
+                    sorted_tasks
+                        .sort_by(|a, b| b.completed_at.unwrap().cmp(&a.completed_at.unwrap()));
+
+                    // Use the first task's timestamp to format the month header
+                    let month_header =
+                        ui::format_month_header(sorted_tasks[0].completed_at.unwrap());
+                    ui::render_section_header(&month_header);
+
+                    for task in sorted_tasks {
+                        ui::render_task_line_with_completion_date(task, &store, false);
+                    }
                 }
             }
         }
