@@ -174,7 +174,10 @@ enum Commands {
 #[derive(Debug, Subcommand)]
 enum AreaCommands {
     /// Create a new area
-    New { name: String },
+    New {
+        /// Name of the area
+        name: String,
+    },
     /// Delete an area
     Delete { name: String },
     /// List all areas
@@ -186,7 +189,13 @@ enum AreaCommands {
 #[derive(Debug, Subcommand)]
 enum ProjectCommands {
     /// Create a new project
-    New { name: String },
+    New {
+        /// Name of the project
+        name: String,
+        /// Assign to an area
+        #[arg(short, long)]
+        area: Option<String>,
+    },
     /// Delete an project
     Delete { name: String },
     /// List all projects
@@ -865,14 +874,18 @@ fn main() {
                 }
             }
         }
-        Some(Commands::Project(ProjectCommands::New { name })) => {
-            let params = CreateProjectParameters { name };
+        Some(Commands::Project(ProjectCommands::New { name, area })) => {
+            let params = CreateProjectParameters { name, area };
             match create_project(&mut store, &storage, params) {
                 Ok(project) => {
                     println!(
                         "✓ Project {} created with slug {}",
                         project.name, project.slug
                     );
+                }
+                Err(CreateProjectError::AreaNotFound(area)) => {
+                    eprintln!("Error: Area with name '{}' not found", area);
+                    std::process::exit(1);
                 }
                 Err(CreateProjectError::ProjectAlreadyExists(name)) => {
                     eprintln!("Error: Project with name '{}' already exists", name);

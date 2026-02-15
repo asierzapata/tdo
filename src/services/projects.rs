@@ -8,6 +8,9 @@ use uuid::Uuid;
 
 #[derive(Debug, Error)]
 pub enum CreateProjectError {
+    #[error("Area with name '{}' not found", .0)]
+    AreaNotFound(String),
+
     #[error("Project with name '{}' already exists", .0)]
     ProjectAlreadyExists(String),
 
@@ -17,6 +20,7 @@ pub enum CreateProjectError {
 
 pub struct CreateProjectParameters {
     pub name: String,
+    pub area: Option<String>,
 }
 
 pub fn create_project(
@@ -26,11 +30,22 @@ pub fn create_project(
 ) -> Result<Project, CreateProjectError> {
     let project_slug = slugify(&parameters.name);
 
+    let area_id = match parameters.area {
+        Some(area_slug) => Some(
+            store
+                .get_area_by_slug(&area_slug)
+                .ok_or(CreateProjectError::AreaNotFound(area_slug))?
+                .id,
+        ),
+        None => None,
+    };
+
     let project = Project {
         id: Uuid::new_v4(),
         name: parameters.name,
         slug: project_slug,
         created_at: jiff::Timestamp::now(),
+        area_id,
         ..Project::default()
     };
 
