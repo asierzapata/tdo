@@ -2,8 +2,46 @@ use crate::{
     models::{project::Project, store::Store},
     storage::{Storage, StorageError},
 };
+use slug::slugify;
 use thiserror::Error;
 use uuid::Uuid;
+
+#[derive(Debug, Error)]
+pub enum CreateProjectError {
+    #[error("Project with name '{}' already exists", .0)]
+    ProjectAlreadyExists(String),
+
+    #[error("Storage error: {0}")]
+    Storage(#[from] StorageError),
+}
+
+pub struct CreateProjectParameters {
+    pub name: String,
+}
+
+pub fn create_project(
+    store: &mut Store,
+    storage: &impl Storage,
+    parameters: CreateProjectParameters,
+) -> Result<Project, CreateProjectError> {
+    let project_slug = slugify(&parameters.name);
+
+    let project = Project {
+        id: Uuid::new_v4(),
+        name: parameters.name,
+        slug: project_slug,
+        created_at: jiff::Timestamp::now(),
+        ..Project::default()
+    };
+
+    let project_id = project.id;
+
+    store.add_project(project);
+
+    storage.save(store)?;
+
+    Ok(store.get_project(project_id).unwrap().clone())
+}
 
 #[derive(Debug, Error)]
 pub enum DeleteProjectError {

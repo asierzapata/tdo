@@ -10,6 +10,10 @@ use crate::{
             CreateAreaError, CreateAreaParameters, DeleteAreaError, DeleteAreaParameters,
             create_area, delete_area,
         },
+        projects::{
+            CreateProjectError, CreateProjectParameters, DeleteProjectError,
+            DeleteProjectParameters, create_project, delete_project,
+        },
         tasks::{
             AddTaskError, AddTaskParameters, CompleteTaskError, CompleteTaskParameters, add_task,
             complete_task,
@@ -41,6 +45,52 @@ enum Commands {
     Add {
         /// Task title
         title: String,
+
+        /// Schedule for today
+        #[arg(long)]
+        today: bool,
+
+        /// Schedule for today (evening)
+        #[arg(long)]
+        evening: bool,
+
+        /// Defer to someday
+        #[arg(long)]
+        someday: bool,
+
+        /// Available anytime (no specific date)
+        #[arg(long)]
+        anytime: bool,
+
+        /// Schedule for a specific date (e.g., "friday", "2025-03-01")
+        #[arg(short, long)]
+        when: Option<String>,
+
+        /// Set a hard deadline
+        #[arg(short, long)]
+        deadline: Option<String>,
+
+        /// Assign to a project
+        #[arg(short, long)]
+        project: Option<String>,
+
+        /// Assign to an area
+        #[arg(short, long)]
+        area: Option<String>,
+
+        /// Add tags (can be used multiple times)
+        #[arg(short, long, action = clap::ArgAction::Append)]
+        tag: Vec<String>,
+
+        /// Add notes
+        #[arg(short, long)]
+        notes: Option<String>,
+    },
+
+    /// Moves a task
+    Move {
+        /// Task number
+        task_number: String,
 
         /// Schedule for today
         #[arg(long)]
@@ -357,6 +407,21 @@ fn main() {
                 }
             }
         }
+        Some(Commands::Move {
+            task_number,
+            today,
+            evening,
+            someday,
+            anytime,
+            when,
+            deadline,
+            project,
+            area,
+            tag,
+            notes,
+        }) => {
+            todo!()
+        }
         Some(Commands::Area(AreaCommands::New { name })) => {
             let params = CreateAreaParameters { name };
             match create_area(&mut store, &storage, params) {
@@ -482,13 +547,114 @@ fn main() {
             }
         }
         Some(Commands::Project(ProjectCommands::New { name })) => {
-            todo!()
+            let params = CreateProjectParameters { name };
+            match create_project(&mut store, &storage, params) {
+                Ok(project) => {
+                    println!(
+                        "✓ Project {} created with slug {}",
+                        project.name, project.slug
+                    );
+                }
+                Err(CreateProjectError::ProjectAlreadyExists(name)) => {
+                    eprintln!("Error: Project with name '{}' already exists", name);
+                    std::process::exit(1);
+                }
+                Err(CreateProjectError::Storage(e)) => {
+                    eprintln!("Error: Failed to create project: {}", e);
+                    std::process::exit(1);
+                }
+            }
         }
         Some(Commands::Project(ProjectCommands::Delete { name })) => {
-            todo!()
+            let params = DeleteProjectParameters { name };
+
+            match delete_project(&mut store, &storage, params) {
+                Ok(result) => {
+                    println!("✓ Project deleted: {}", result.project.name);
+                    if result.cascaded_tasks_count > 0 {
+                        println!("  └─ {} task(s) also deleted", result.cascaded_tasks_count);
+                    }
+                }
+                Err(DeleteProjectError::ProjectNotFound(name)) => {
+                    eprintln!("Error: Project '{}' not found", name);
+
+                    let projects: Vec<_> = store.get_active_projects().collect();
+                    if !projects.is_empty() {
+                        eprintln!("\nAvailable projects:");
+                        for project in projects {
+                            eprintln!("  - {}", project.name);
+                        }
+                    }
+                    std::process::exit(1);
+                }
+                Err(DeleteProjectError::AmbiguousProjectName(names)) => {
+                    eprintln!("Error: Project name is ambiguous. Multiple projects found:");
+                    for name in names {
+                        eprintln!("  - {}", name);
+                    }
+                    eprintln!("\nPlease be more specific.");
+                    std::process::exit(1);
+                }
+                Err(DeleteProjectError::ProjectAlreadyDeleted(name)) => {
+                    eprintln!("Error: Project '{}' is already deleted", name);
+                    std::process::exit(1);
+                }
+                Err(DeleteProjectError::Storage(e)) => {
+                    eprintln!("Error: Failed to delete project: {}", e);
+                    std::process::exit(1);
+                }
+            }
         }
         Some(Commands::Project(ProjectCommands::List)) => {
-            todo!()
+            // Collect all active projects
+            let mut projects: Vec<_> = store.get_active_projects().collect();
+
+            if projects.is_empty() {
+                println!("No projects found");
+            } else {
+                // Sort alphabetically by name (case-insensitive)
+                projects.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+                println!(
+                    "{} ({} {})\n",
+                    "PROJECTS".cyan(),
+                    projects.len(),
+                    if projects.len() == 1 {
+                        "project"
+                    } else {
+                        "projects"
+                    }
+                );
+
+                for project in projects {
+                    // Count active tasks in this project
+                    let task_count = store
+                        .get_tasks_for_project(project.id)
+                        .filter(|t| t.deleted_at.is_none())
+                        .count();
+
+                    // Display project name
+                    println!("{} {}", "•".green(), project.name.bold());
+
+                    // Display area if project belongs to one
+                    if let Some(area_id) = project.area_id {
+                        if let Some(area) = store.get_area(area_id) {
+                            println!("    {} {}", "Area:".dimmed(), area.name.blue());
+                        }
+                    }
+
+                    // Display task count
+                    println!(
+                        "    {} {}",
+                        task_count.to_string().dimmed(),
+                        if task_count == 1 { "task" } else { "tasks" }.dimmed()
+                    );
+
+                    // Display separator
+                    println!("    {}", "─".repeat(30).dimmed());
+                    println!();
+                }
+            }
         }
         None => {
             // Default: show today view
