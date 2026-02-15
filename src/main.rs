@@ -89,6 +89,10 @@ enum Commands {
     /// Manage areas
     #[command(subcommand)]
     Area(AreaCommands),
+
+    /// Manage projects
+    #[command(subcommand)]
+    Project(ProjectCommands),
 }
 
 #[derive(Debug, Subcommand)]
@@ -97,6 +101,18 @@ enum AreaCommands {
     New { name: String },
     /// Delete an area
     Delete { name: String },
+    /// List all areas
+    List,
+}
+
+#[derive(Debug, Subcommand)]
+enum ProjectCommands {
+    /// Create a new project
+    New { name: String },
+    /// Delete an project
+    Delete { name: String },
+    /// List all projects
+    List,
 }
 
 fn main() {
@@ -390,6 +406,89 @@ fn main() {
                     std::process::exit(1);
                 }
             }
+        }
+        Some(Commands::Area(AreaCommands::List)) => {
+            // Collect all active areas
+            let mut areas: Vec<_> = store.get_active_areas().collect();
+
+            if areas.is_empty() {
+                println!("No areas found");
+            } else {
+                // Sort alphabetically by name (case-insensitive)
+                areas.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+                println!(
+                    "{} ({} {})\n",
+                    "AREAS".cyan(),
+                    areas.len(),
+                    if areas.len() == 1 { "area" } else { "areas" }
+                );
+
+                for area in areas {
+                    // Count active projects in this area
+                    let project_count = store
+                        .get_projects_for_area(area.id)
+                        .filter(|p| p.deleted_at.is_none())
+                        .count();
+
+                    // Count active tasks - includes both direct tasks and tasks within projects
+                    let direct_task_count = store
+                        .get_tasks_for_area(area.id)
+                        .filter(|t| t.deleted_at.is_none())
+                        .count();
+
+                    let project_task_count: usize = store
+                        .get_projects_for_area(area.id)
+                        .filter(|p| p.deleted_at.is_none())
+                        .map(|p| {
+                            store
+                                .get_tasks_for_project(p.id)
+                                .filter(|t| t.deleted_at.is_none())
+                                .count()
+                        })
+                        .sum();
+
+                    let total_task_count = direct_task_count + project_task_count;
+
+                    // Display area name
+                    println!("{} {}", "•".green(), area.name.bold());
+
+                    // Display counts
+                    println!(
+                        "    {} {} {} {}",
+                        project_count.to_string().dimmed(),
+                        if project_count == 1 {
+                            "project"
+                        } else {
+                            "projects"
+                        },
+                        "•".dimmed(),
+                        format!(
+                            "{} {}",
+                            total_task_count,
+                            if total_task_count == 1 {
+                                "task"
+                            } else {
+                                "tasks"
+                            }
+                        )
+                        .dimmed()
+                    );
+
+                    // Display separator
+                    println!("    {}", "─".repeat(30).dimmed());
+                    println!();
+                }
+            }
+        }
+        Some(Commands::Project(ProjectCommands::New { name })) => {
+            todo!()
+        }
+        Some(Commands::Project(ProjectCommands::Delete { name })) => {
+            todo!()
+        }
+        Some(Commands::Project(ProjectCommands::List)) => {
+            todo!()
         }
         None => {
             // Default: show today view
