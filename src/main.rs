@@ -5,7 +5,10 @@ use colored::*;
 
 use crate::{
     models::task::{When, WhenInstantiationError},
-    services::add::{AddTaskError, AddTaskParameters, add_task},
+    services::tasks::{
+        AddTaskError, AddTaskParameters, CompleteTaskError, CompleteTaskParameters, add_task,
+        complete_task,
+    },
     storage::{Storage, json::JsonFileStorage},
 };
 
@@ -72,6 +75,10 @@ enum Commands {
         /// Add notes
         #[arg(short, long)]
         notes: Option<String>,
+    },
+
+    Done {
+        task_number_or_fuzzy_name: String,
     },
 }
 
@@ -196,7 +203,9 @@ fn main() {
                 Ok(w) => w,
                 Err(WhenInstantiationError::ScheduleAtIncorrect(date_str)) => {
                     eprintln!("Error: Invalid schedule date format: '{}'", date_str);
-                    eprintln!("\nExpected format: YYYY-MM-DD (e.g., 2025-03-01) or relative dates like 'friday', 'next monday'");
+                    eprintln!(
+                        "\nExpected format: YYYY-MM-DD (e.g., 2025-03-01) or relative dates like 'friday', 'next monday'"
+                    );
                     std::process::exit(1);
                 }
                 Err(WhenInstantiationError::ConflictingFlags(flags)) => {
@@ -290,6 +299,47 @@ fn main() {
                     std::process::exit(1);
                 }
                 Err(AddTaskError::Storage(e)) => {
+                    eprintln!("Error: Failed to save task: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        Some(Commands::Done {
+            task_number_or_fuzzy_name,
+        }) => {
+            // Load store
+            let mut store = match storage.load() {
+                Ok(store) => store,
+                Err(e) => {
+                    eprintln!("Error: Failed to load store: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            // Build parameters
+            let params = CompleteTaskParameters {
+                task_number_or_fuzzy_name,
+            };
+
+            // Call service
+            match complete_task(&mut store, &storage, params) {
+                Ok(task) => {
+                    println!("✓ Task completed: {}", task.title);
+                    println!("  #{}", task.task_number);
+                }
+                Err(CompleteTaskError::TaskNotFound(identifier)) => {
+                    eprintln!("Error: Task '{}' not found", identifier);
+                    std::process::exit(1);
+                }
+                Err(CompleteTaskError::AmbiguousTaskName(titles)) => {
+                    eprintln!("Error: Task name is ambiguous. Multiple tasks found:");
+                    for title in titles {
+                        eprintln!("  - {}", title);
+                    }
+                    eprintln!("\nPlease be more specific or use the task number.");
+                    std::process::exit(1);
+                }
+                Err(CompleteTaskError::Storage(e)) => {
                     eprintln!("Error: Failed to save task: {}", e);
                     std::process::exit(1);
                 }

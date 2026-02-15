@@ -126,3 +126,70 @@ pub fn add_task(
     // 7. Return the created task (with the assigned task_number)
     Ok(store.get_task(task_id).unwrap().clone())
 }
+
+#[derive(Debug, Error)]
+pub enum CompleteTaskError {
+    #[error("Task '{0}' not found")]
+    TaskNotFound(String),
+
+    #[error("Task name is ambiguous. Multiple tasks found: {}", .0.join(", "))]
+    AmbiguousTaskName(Vec<String>),
+
+    #[error("Storage error: {0}")]
+    Storage(#[from] StorageError),
+}
+
+pub struct CompleteTaskParameters {
+    pub task_number_or_fuzzy_name: String,
+}
+
+pub fn complete_task(
+    store: &mut Store,
+    storage: &impl Storage,
+    parameters: CompleteTaskParameters,
+) -> Result<Task, CompleteTaskError> {
+    // Try to parse as task number first
+    let task = if let Ok(task_number) = parameters.task_number_or_fuzzy_name.parse::<u64>() {
+        // Look up by task number
+        store.get_task_by_number(task_number).ok_or_else(|| {
+            CompleteTaskError::TaskNotFound(parameters.task_number_or_fuzzy_name.clone())
+        })?
+    } else {
+        // Fall back to fuzzy matching by title (similar to how projects/areas work)
+        let matching_tasks: Vec<_> = store
+            .tasks
+            .values()
+            .filter(|t| t.completed_at.is_none()) // Only match incomplete tasks
+            .filter(|t| {
+                t.title
+                    .to_lowercase()
+                    .contains(&parameters.task_number_or_fuzzy_name.to_lowercase())
+            })
+            .collect();
+
+        match matching_tasks.len() {
+            0 => {
+                return Err(CompleteTaskError::TaskNotFound(
+                    parameters.task_number_or_fuzzy_name,
+                ));
+            }
+            1 => matching_tasks[0],
+            _ => {
+                let titles: Vec<String> = matching_tasks.iter().map(|t| t.title.clone()).collect();
+                return Err(CompleteTaskError::AmbiguousTaskName(titles));
+            }
+        }
+    };
+
+    // Mark task as completed
+    let mut updated_task = task.clone();
+    updated_task.completed_at = Some(jiff::Timestamp::now());
+
+    // Update in store
+    store.tasks.insert(updated_task.id, updated_task.clone());
+
+    // Persist to storage
+    storage.save(store)?;
+
+    Ok(updated_task)
+}
