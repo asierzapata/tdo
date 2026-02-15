@@ -5,9 +5,12 @@ use colored::*;
 
 use crate::{
     models::task::{When, WhenInstantiationError},
-    services::tasks::{
-        AddTaskError, AddTaskParameters, CompleteTaskError, CompleteTaskParameters, add_task,
-        complete_task,
+    services::{
+        areas::{CreateAreaError, CreateAreaParameters, create_area},
+        tasks::{
+            AddTaskError, AddTaskParameters, CompleteTaskError, CompleteTaskParameters, add_task,
+            complete_task,
+        },
     },
     storage::{Storage, json::JsonFileStorage},
 };
@@ -77,9 +80,20 @@ enum Commands {
         notes: Option<String>,
     },
 
-    Done {
-        task_number_or_fuzzy_name: String,
-    },
+    /// Complete a task
+    Done { task_number_or_fuzzy_name: String },
+
+    /// Manage areas
+    #[command(subcommand)]
+    Area(AreaCommands),
+}
+
+#[derive(Debug, Subcommand)]
+enum AreaCommands {
+    /// Create a new area
+    New { name: String },
+    /// Delete an area
+    Delete { name: String },
 }
 
 fn main() {
@@ -101,17 +115,16 @@ fn main() {
 
     let storage = JsonFileStorage::new(storage_path);
 
+    let mut store = match storage.load() {
+        Ok(store) => store,
+        Err(e) => {
+            eprintln!("Error: Failed to load store: {}", e);
+            std::process::exit(1);
+        }
+    };
+
     match cli.command {
         Some(Commands::Inbox) => {
-            // Load store
-            let store = match storage.load() {
-                Ok(store) => store,
-                Err(e) => {
-                    eprintln!("Error: Failed to load store: {}", e);
-                    std::process::exit(1);
-                }
-            };
-
             // Filter inbox tasks
             let inbox_tasks: Vec<_> = store
                 .tasks
@@ -154,10 +167,10 @@ fn main() {
                                 meta_parts.push(project.name.blue().to_string());
                             }
                         }
-                    } else if let Some(area_id) = task.area_id {
-                        if let Some(area) = store.get_area(area_id) {
-                            meta_parts.push(area.name.blue().to_string());
-                        }
+                    } else if let Some(area_id) = task.area_id
+                        && let Some(area) = store.get_area(area_id)
+                    {
+                        meta_parts.push(area.name.blue().to_string());
                     }
 
                     // Add tags
@@ -189,15 +202,6 @@ fn main() {
             tag,
             notes,
         }) => {
-            // Load store
-            let mut store = match storage.load() {
-                Ok(store) => store,
-                Err(e) => {
-                    eprintln!("Error: Failed to load store: {}", e);
-                    std::process::exit(1);
-                }
-            };
-
             // Parse when flags
             let when = match When::from_command_flags(today, evening, someday, anytime, when_str) {
                 Ok(w) => w,
@@ -241,10 +245,10 @@ fn main() {
                 Ok(task) => {
                     println!("✓ Task added: {}", task.title);
                     println!("  #{}", task.task_number);
-                    if let Some(project_id) = task.project_id {
-                        if let Some(project) = store.get_project(project_id) {
-                            println!("  Project: {}", project.name);
-                        }
+                    if let Some(project_id) = task.project_id
+                        && let Some(project) = store.get_project(project_id)
+                    {
+                        println!("  Project: {}", project.name);
                     }
                 }
                 Err(AddTaskError::ProjectNotFound(name)) => {
@@ -307,15 +311,6 @@ fn main() {
         Some(Commands::Done {
             task_number_or_fuzzy_name,
         }) => {
-            // Load store
-            let mut store = match storage.load() {
-                Ok(store) => store,
-                Err(e) => {
-                    eprintln!("Error: Failed to load store: {}", e);
-                    std::process::exit(1);
-                }
-            };
-
             // Build parameters
             let params = CompleteTaskParameters {
                 task_number_or_fuzzy_name,
@@ -344,6 +339,25 @@ fn main() {
                     std::process::exit(1);
                 }
             }
+        }
+        Some(Commands::Area(AreaCommands::New { name })) => {
+            let params = CreateAreaParameters { name };
+            match create_area(&mut store, &storage, params) {
+                Ok(area) => {
+                    println!("✓ Area {} created with slug {}", area.name, area.slug);
+                }
+                Err(CreateAreaError::AreaAlreadyExists(name)) => {
+                    eprintln!("Error: Area with name '{}' already exists", name);
+                    std::process::exit(1);
+                }
+                Err(CreateAreaError::Storage(e)) => {
+                    eprintln!("Error: Failed to create area: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        Some(Commands::Area(AreaCommands::Delete { name })) => {
+            todo!()
         }
         None => {
             // Default: show today view

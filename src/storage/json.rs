@@ -173,6 +173,7 @@ impl Storage for JsonFileStorage {
         let lock_file = OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(true)
             .open(&lock_file_path)
             .map_err(|e| StorageError::SaveFailed {
                 path: lock_file_path.clone(),
