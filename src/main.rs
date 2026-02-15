@@ -127,11 +127,9 @@ fn main() {
         Some(Commands::Inbox) => {
             // Filter inbox tasks
             let inbox_tasks: Vec<_> = store
-                .tasks
-                .values()
+                .get_active_tasks()
                 .filter(|t| matches!(t.when, When::Inbox))
                 .filter(|t| t.completed_at.is_none())
-                .filter(|t| t.deleted_at.is_none())
                 .collect();
 
             // Display

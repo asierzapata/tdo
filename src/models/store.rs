@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::models::{area::Area, project::Project, task::Task};
 
 /// Current schema version
-pub const CURRENT_VERSION: u32 = 2;
+pub const CURRENT_VERSION: u32 = 3;
 
 /// Storage representation (how data lives on disk as JSON)
 #[derive(Serialize, Deserialize)]
@@ -114,5 +114,71 @@ impl Store {
     /// Get an area by ID
     pub fn get_area(&self, id: Uuid) -> Option<&Area> {
         self.areas.get(&id)
+    }
+
+    /// Get all active (non-deleted) tasks
+    pub fn get_active_tasks(&self) -> impl Iterator<Item = &Task> {
+        self.tasks.values().filter(|t| t.deleted_at.is_none())
+    }
+
+    /// Get all active (non-deleted) projects
+    pub fn get_active_projects(&self) -> impl Iterator<Item = &Project> {
+        self.projects.values().filter(|p| p.deleted_at.is_none())
+    }
+
+    /// Get all active (non-deleted) areas
+    pub fn get_active_areas(&self) -> impl Iterator<Item = &Area> {
+        self.areas.values().filter(|a| a.deleted_at.is_none())
+    }
+
+    /// Get all deleted tasks (for trash view)
+    pub fn get_deleted_tasks(&self) -> impl Iterator<Item = &Task> {
+        self.tasks.values().filter(|t| t.deleted_at.is_some())
+    }
+
+    /// Get all deleted projects (for trash view)
+    pub fn get_deleted_projects(&self) -> impl Iterator<Item = &Project> {
+        self.projects.values().filter(|p| p.deleted_at.is_some())
+    }
+
+    /// Get all deleted areas (for trash view)
+    pub fn get_deleted_areas(&self) -> impl Iterator<Item = &Area> {
+        self.areas.values().filter(|a| a.deleted_at.is_some())
+    }
+
+    /// Get a mutable task by ID
+    pub fn get_task_mut(&mut self, id: Uuid) -> Option<&mut Task> {
+        self.tasks.get_mut(&id)
+    }
+
+    /// Get a mutable project by ID
+    pub fn get_project_mut(&mut self, id: Uuid) -> Option<&mut Project> {
+        self.projects.get_mut(&id)
+    }
+
+    /// Get a mutable area by ID
+    pub fn get_area_mut(&mut self, id: Uuid) -> Option<&mut Area> {
+        self.areas.get_mut(&id)
+    }
+
+    /// Find tasks belonging to a project
+    pub fn get_tasks_for_project(&self, project_id: Uuid) -> impl Iterator<Item = &Task> {
+        self.tasks
+            .values()
+            .filter(move |t| t.project_id == Some(project_id))
+    }
+
+    /// Find projects belonging to an area
+    pub fn get_projects_for_area(&self, area_id: Uuid) -> impl Iterator<Item = &Project> {
+        self.projects
+            .values()
+            .filter(move |p| p.area_id == Some(area_id))
+    }
+
+    /// Find tasks directly belonging to an area (no project)
+    pub fn get_tasks_for_area(&self, area_id: Uuid) -> impl Iterator<Item = &Task> {
+        self.tasks
+            .values()
+            .filter(move |t| t.area_id == Some(area_id) && t.project_id.is_none())
     }
 }

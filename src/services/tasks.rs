@@ -49,8 +49,7 @@ pub fn add_task(
     // 1. Validate and resolve project name to project ID
     let project_id = if let Some(project_name) = parameters.project {
         let matching_projects: Vec<_> = store
-            .projects
-            .values()
+            .get_active_projects()
             .filter(|p| p.name.to_lowercase().contains(&project_name.to_lowercase()))
             .collect();
 
@@ -69,8 +68,7 @@ pub fn add_task(
     // 2. Validate and resolve area name to area ID
     let area_id = if let Some(area_name) = parameters.area {
         let matching_areas: Vec<_> = store
-            .areas
-            .values()
+            .get_active_areas()
             .filter(|a| a.name.to_lowercase().contains(&area_name.to_lowercase()))
             .collect();
 
@@ -157,8 +155,7 @@ pub fn complete_task(
     } else {
         // Fall back to fuzzy matching by title (similar to how projects/areas work)
         let matching_tasks: Vec<_> = store
-            .tasks
-            .values()
+            .get_active_tasks()
             .filter(|t| t.completed_at.is_none()) // Only match incomplete tasks
             .filter(|t| {
                 t.title
@@ -192,4 +189,121 @@ pub fn complete_task(
     storage.save(store)?;
 
     Ok(updated_task)
+}
+
+#[derive(Debug, Error)]
+pub enum DeleteTaskError {
+    #[error("Task '{0}' not found")]
+    TaskNotFound(String),
+
+    #[error("Task '{0}' is already deleted")]
+    TaskAlreadyDeleted(String),
+
+    #[error("Task name is ambiguous. Multiple tasks found: {}", .0.join(", "))]
+    AmbiguousTaskName(Vec<String>),
+
+    #[error("Storage error: {0}")]
+    Storage(#[from] StorageError),
+}
+
+pub struct DeleteTaskParameters {
+    pub task_number_or_fuzzy_name: String,
+}
+
+pub fn delete_task(
+    store: &mut Store,
+    storage: &impl Storage,
+    parameters: DeleteTaskParameters,
+) -> Result<Task, DeleteTaskError> {
+    // Try to parse as task number first
+    let task = if let Ok(task_number) = parameters.task_number_or_fuzzy_name.parse::<u64>() {
+        store.get_task_by_number(task_number).ok_or_else(|| {
+            DeleteTaskError::TaskNotFound(parameters.task_number_or_fuzzy_name.clone())
+        })?
+    } else {
+        // Fuzzy matching by title (only active tasks)
+        let matching_tasks: Vec<_> = store
+            .get_active_tasks()
+            .filter(|t| {
+                t.title
+                    .to_lowercase()
+                    .contains(&parameters.task_number_or_fuzzy_name.to_lowercase())
+            })
+            .collect();
+
+        match matching_tasks.len() {
+            0 => {
+                return Err(DeleteTaskError::TaskNotFound(
+                    parameters.task_number_or_fuzzy_name,
+                ));
+            }
+            1 => matching_tasks[0],
+            _ => {
+                let titles: Vec<String> = matching_tasks.iter().map(|t| t.title.clone()).collect();
+                return Err(DeleteTaskError::AmbiguousTaskName(titles));
+            }
+        }
+    };
+
+    // Check if already deleted
+    if task.deleted_at.is_some() {
+        return Err(DeleteTaskError::TaskAlreadyDeleted(task.title.clone()));
+    }
+
+    // Mark as deleted
+    let task_id = task.id;
+    let mut updated_task = task.clone();
+    updated_task.deleted_at = Some(jiff::Timestamp::now());
+
+    // Update in store
+    store.tasks.insert(task_id, updated_task.clone());
+
+    // Persist to storage
+    storage.save(store)?;
+
+    Ok(updated_task)
+}
+
+#[derive(Debug, Error)]
+pub enum RestoreTaskError {
+    #[error("Task '{0}' not found")]
+    TaskNotFound(String),
+
+    #[error("Task '{0}' is not deleted")]
+    TaskNotDeleted(String),
+
+    #[error("Storage error: {0}")]
+    Storage(#[from] StorageError),
+}
+
+pub struct RestoreTaskParameters {
+    pub task_number: u64,
+}
+
+pub fn restore_task(
+    store: &mut Store,
+    storage: &impl Storage,
+    parameters: RestoreTaskParameters,
+) -> Result<Task, RestoreTaskError> {
+    let task = store
+        .get_task_by_number(parameters.task_number)
+        .ok_or_else(|| RestoreTaskError::TaskNotFound(parameters.task_number.to_string()))?;
+
+    // Check if deleted
+    if task.deleted_at.is_none() {
+        return Err(RestoreTaskError::TaskNotDeleted(task.title.clone()));
+    }
+
+    // Restore task
+    let task_id = task.id;
+    let mut restored_task = task.clone();
+    restored_task.deleted_at = None;
+
+    // Update in store
+    store.tasks.insert(task_id, restored_task.clone());
+
+    // Persist to storage
+    storage.save(store)?;
+
+    Ok(restored_task)
 }

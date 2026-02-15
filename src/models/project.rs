@@ -12,5 +12,6 @@ pub struct Project {
     pub notes: Option<String>,
     pub deadline: Option<Date>,
     pub completed_at: Option<Timestamp>,
+    pub deleted_at: Option<Timestamp>,
     pub created_at: Timestamp,
 }

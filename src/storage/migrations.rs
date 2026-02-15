@@ -7,7 +7,7 @@ use crate::storage::StorageError;
 type MigrationFn = fn(Value) -> Result<Value, StorageError>;
 
 fn get_migrations() -> Vec<MigrationFn> {
-    vec![migrate_v1_to_v2]
+    vec![migrate_v1_to_v2, migrate_v2_to_v3]
 }
 
 fn migrate_v1_to_v2(mut value: Value) -> Result<Value, StorageError> {
@@ -40,6 +40,32 @@ fn migrate_v1_to_v2(mut value: Value) -> Result<Value, StorageError> {
             obj.insert("next_task_number".to_string(), Value::from(next));
         } else {
             obj.insert("next_task_number".to_string(), Value::from(1u64));
+        }
+    }
+
+    Ok(value)
+}
+
+fn migrate_v2_to_v3(mut value: Value) -> Result<Value, StorageError> {
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("version".to_string(), Value::from(3));
+
+        // Add deleted_at: null to all projects
+        if let Some(projects) = obj.get_mut("projects").and_then(|p| p.as_array_mut()) {
+            for project in projects {
+                if let Some(project_obj) = project.as_object_mut() {
+                    project_obj.insert("deleted_at".to_string(), Value::Null);
+                }
+            }
+        }
+
+        // Add deleted_at: null to all areas
+        if let Some(areas) = obj.get_mut("areas").and_then(|a| a.as_array_mut()) {
+            for area in areas {
+                if let Some(area_obj) = area.as_object_mut() {
+                    area_obj.insert("deleted_at".to_string(), Value::Null);
+                }
+            }
         }
     }
 
