@@ -22,7 +22,6 @@ pub fn get_status_glyph(task: &Task, is_overdue: bool) -> ColoredString {
 /// Build the context string for a task (Area/Project hierarchy)
 /// Returns None if task has no area or project associations
 pub fn get_task_context(task: &Task, store: &Store) -> Option<String> {
-    // Rule A & C: If task has a project, show it (with area if project has one)
     if let Some(project_id) = task.project_id {
         if let Some(project) = store.get_project(project_id) {
             if let Some(area_id) = project.area_id {
@@ -31,19 +30,16 @@ pub fn get_task_context(task: &Task, store: &Store) -> Option<String> {
                     return Some(format!("{} / {}", area.name, project.name));
                 }
             }
-            // Rule C: {Project Name} (no area)
             return Some(project.name.clone());
         }
     }
 
-    // Rule B: Task has area but no project
     if let Some(area_id) = task.area_id {
         if let Some(area) = store.get_area(area_id) {
             return Some(area.name.clone());
         }
     }
 
-    // Rule D: No associations
     None
 }
 
@@ -51,19 +47,14 @@ pub fn get_task_context(task: &Task, store: &Store) -> Option<String> {
 pub fn render_task_line(task: &Task, store: &Store, is_overdue: bool) {
     let terminal_width = get_terminal_width();
 
-    // Build left section: ID + glyph + title
     let id_str = format!("{:>3}", task.task_number);
     let glyph = get_status_glyph(task, is_overdue);
     let title = &task.title;
 
-    // Build right section: context (if any)
     let context = get_task_context(task, store);
 
-    // Calculate spacing needed for right alignment
-    // Format: "  ID  GLYPH  TITLE" + spaces + "CONTEXT"
     let left_section = format!("  {}  {}  {}", id_str, glyph, title);
 
-    // Apply completed styling if needed
     let styled_left = if task.completed_at.is_some() {
         left_section.dimmed().strikethrough()
     } else {
@@ -73,11 +64,9 @@ pub fn render_task_line(task: &Task, store: &Store, is_overdue: bool) {
     if let Some(ctx) = context {
         let ctx_dimmed = ctx.dimmed();
 
-        // Calculate the visible length (without ANSI codes)
         let left_visible_len = format!("  {}  {}  {}", id_str, " ", title).len();
         let ctx_visible_len = ctx.len();
 
-        // Calculate padding needed
         let total_content = left_visible_len + ctx_visible_len;
 
         if total_content + 4 < terminal_width {

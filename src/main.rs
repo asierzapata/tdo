@@ -398,10 +398,7 @@ fn main() {
             use std::collections::HashMap;
 
             // Collect all active, incomplete tasks
-            let all_tasks: Vec<_> = store
-                .get_active_tasks()
-                .filter(|t| t.completed_at.is_none())
-                .collect();
+            let all_tasks: Vec<_> = store.get_active_tasks().collect();
 
             if all_tasks.is_empty() {
                 println!("No active tasks");
@@ -1143,7 +1140,6 @@ fn main() {
         }
         None => {
             // Default: show today view (same as `tdo today`)
-            use jiff::civil::Date;
             let today = jiff::Zoned::now().date();
 
             // Collect today tasks
